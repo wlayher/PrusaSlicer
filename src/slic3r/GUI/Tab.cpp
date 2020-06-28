@@ -260,7 +260,7 @@ void Tab::create_preset_tab()
 
     //left vertical sizer
     m_left_sizer = new wxBoxSizer(wxVERTICAL);
-    m_hsizer->Add(m_left_sizer, 0, wxEXPAND | wxLEFT | wxTOP | wxBOTTOM, 3);
+    m_hsizer->Add(m_left_sizer, 1, wxEXPAND | wxLEFT | wxTOP | wxBOTTOM, 3);
 
     // tree
     m_treectrl = new wxTreeCtrl(panel, wxID_ANY, wxDefaultPosition, wxSize(20 * m_em_unit, -1),
@@ -380,7 +380,7 @@ Slic3r::GUI::PageShp Tab::add_options_page(const wxString& title, const std::str
 
     page->SetScrollbars(1, 20, 1, 2);
     page->Hide();
-    m_hsizer->Add(page.get(), 1, wxEXPAND | wxLEFT, 5);
+    m_hsizer->Add(page.get(), 6, wxEXPAND | wxLEFT, 5);
 
     if (!is_extruder_pages)
         m_pages.push_back(page);

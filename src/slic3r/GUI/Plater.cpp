@@ -1934,8 +1934,8 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     panel_sizer = new wxBoxSizer(wxHORIZONTAL);
     panel_sizer->Add(view3D, 1, wxEXPAND | wxALL, 0);
     panel_sizer->Add(preview, 1, wxEXPAND | wxALL, 0);
-    hsizer->Add(panel_sizer, 1, wxEXPAND | wxALL, 0);
-    hsizer->Add(sidebar, 0, wxEXPAND | wxLEFT | wxRIGHT, 0);
+    hsizer->Add(panel_sizer, 3, wxEXPAND | wxALL, 0);
+    hsizer->Add(sidebar, 1, wxEXPAND | wxLEFT | wxRIGHT, 0);
     q->SetSizer(hsizer);
 
     init_object_menu();
