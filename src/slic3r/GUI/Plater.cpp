@@ -374,7 +374,7 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
         auto sizer = new wxBoxSizer(wxHORIZONTAL);
         auto btn = new ScalableButton(parent, wxID_ANY, "mirroring_transparent.png", wxEmptyString,
             wxDefaultSize, wxDefaultPosition, wxBU_EXACTFIT | wxNO_BORDER | wxTRANSPARENT_WINDOW);
-        sizer->Add(btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, int(0.3 * wxGetApp().em_unit()));
+        sizer->Add(btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, int(0.5 * wxGetApp().em_unit()));
         m_empty_buttons.push_back(btn);
         return sizer;
     };
@@ -429,7 +429,7 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
         auto btn = new ScalableButton(parent, wxID_ANY, "mirroring_transparent.png", wxEmptyString,
                                       wxDefaultSize, wxDefaultPosition, wxBU_EXACTFIT | wxNO_BORDER | wxTRANSPARENT_WINDOW);
         sizer->Add(btn , 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT,
-            int(0.3 * wxGetApp().em_unit()));
+            int(0.5 * wxGetApp().em_unit()));
         m_empty_buttons.push_back(btn);
 
         return sizer;
@@ -666,7 +666,7 @@ Sidebar::Sidebar(Plater *parent)
         combo_and_btn_sizer->Add(*combo, 1, wxEXPAND);
         if ((*combo)->edit_btn)
             combo_and_btn_sizer->Add((*combo)->edit_btn, 0, wxALIGN_CENTER_VERTICAL|wxLEFT|wxRIGHT,
-                                    int(0.3*wxGetApp().em_unit()));
+                                    int(0.5*wxGetApp().em_unit()));
 
         auto *sizer_presets = this->p->sizer_presets;
         auto *sizer_filaments = this->p->sizer_filaments;
@@ -807,7 +807,7 @@ void Sidebar::init_filament_combo(PlaterPresetComboBox **combo, const int extr_i
     auto combo_and_btn_sizer = new wxBoxSizer(wxHORIZONTAL);
     combo_and_btn_sizer->Add(*combo, 1, wxEXPAND);
     combo_and_btn_sizer->Add((*combo)->edit_btn, 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT,
-                            int(0.3*wxGetApp().em_unit()));
+                            int(0.5*wxGetApp().em_unit()));
 
     auto /***/sizer_filaments = this->p->sizer_filaments;
     sizer_filaments->Add(combo_and_btn_sizer, 1, wxEXPAND | wxBOTTOM, 1);
