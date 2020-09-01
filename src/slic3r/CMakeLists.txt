@@ -21,6 +21,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/3DScene.cpp
     GUI/3DScene.hpp
     GUI/format.hpp
+    GUI/GLShadersManager.hpp
+    GUI/GLShadersManager.cpp
     GUI/GLShader.cpp
     GUI/GLShader.hpp    
     GUI/GLCanvas3D.hpp
@@ -53,10 +55,14 @@ set(SLIC3R_GUI_SOURCES
     GUI/Gizmos/GLGizmoHollow.hpp
     GUI/GLSelectionRectangle.cpp
     GUI/GLSelectionRectangle.hpp
+    GUI/GLModel.hpp
+    GUI/GLModel.cpp
     GUI/GLTexture.hpp
     GUI/GLTexture.cpp
     GUI/GLToolbar.hpp
     GUI/GLToolbar.cpp
+    GUI/GCodeViewer.hpp
+    GUI/GCodeViewer.cpp    
     GUI/Preferences.cpp
     GUI/Preferences.hpp
     GUI/PresetHints.cpp
@@ -181,13 +187,12 @@ set(SLIC3R_GUI_SOURCES
     Utils/Bonjour.hpp
     Utils/PresetUpdater.cpp
     Utils/PresetUpdater.hpp
+    Utils/Profile.hpp
     Utils/UndoRedo.cpp
     Utils/UndoRedo.hpp
     Utils/HexFile.cpp
     Utils/HexFile.hpp
     Utils/Thread.hpp
-    Utils/SLAImport.hpp
-    Utils/SLAImport.cpp
 )
 
 if (APPLE)
