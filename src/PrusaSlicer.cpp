@@ -22,6 +22,7 @@
 #include <cstring>
 #include <iostream>
 #include <math.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/nowide/args.hpp>
 #include <boost/nowide/cenv.hpp>
@@ -101,8 +102,14 @@ int CLI::run(int argc, char **argv)
         std::find(m_transforms.begin(), m_transforms.end(), "cut") == m_transforms.end() &&
         std::find(m_transforms.begin(), m_transforms.end(), "cut_x") == m_transforms.end() &&
         std::find(m_transforms.begin(), m_transforms.end(), "cut_y") == m_transforms.end();
-    bool 							start_as_gcodeviewer = false;
-    
+    bool 							start_as_gcodeviewer =
+#ifdef _WIN32
+            false;
+#else
+            // On Unix systems, the prusa-slicer binary may be symlinked to give the application a different meaning.
+            boost::algorithm::iends_with(boost::filesystem::path(argv[0]).filename().string(), "gcodeviewer");
+#endif // _WIN32
+
     const std::vector<std::string> &load_configs		= m_config.option<ConfigOptionStrings>("load", true)->values;
 
     // load config files supplied via --load
@@ -534,7 +541,11 @@ int CLI::run(int argc, char **argv)
     if (start_gui) {
 #ifdef SLIC3R_GUI
 // #ifdef USE_WX
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+        GUI::GUI_App* gui = new GUI::GUI_App(start_as_gcodeviewer ? GUI::GUI_App::EAppMode::GCodeViewer : GUI::GUI_App::EAppMode::Editor);
+#else
         GUI::GUI_App *gui = new GUI::GUI_App();
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 
 		bool gui_single_instance_setting = gui->app_config->get("single_instance") == "1";
 		if (Slic3r::instance_check(argc, argv, gui_single_instance_setting)) {

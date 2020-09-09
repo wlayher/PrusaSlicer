@@ -1,3 +1,4 @@
+#include "libslic3r/Technologies.hpp"
 #include "GUI_App.hpp"
 #include "GUI_ObjectList.hpp"
 #include "GUI_ObjectManipulation.hpp"
@@ -30,6 +31,7 @@
 
 #include <wx/dialog.h>
 #include <wx/textctrl.h>
+#include <wx/splash.h>
 
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/Model.hpp"
@@ -75,6 +77,171 @@ namespace Slic3r {
 namespace GUI {
 
 class MainFrame;
+
+static float get_scale_for_main_display()
+{
+    // ysFIXME : Workaround :
+    // wxFrame is created on the main monitor, so we can take a scale factor from this one
+    // before The Application and the Mainframe are created
+    wxFrame fr(nullptr, wxID_ANY, wxEmptyString);
+
+#if ENABLE_WX_3_1_3_DPI_CHANGED_EVENT && !defined(__WXGTK__)
+    int dpi = get_dpi_for_window(&fr);
+    float sf = dpi != DPI_DEFAULT ? sf = (float)dpi / DPI_DEFAULT : 1.0;
+#else
+    printf("dpi = %d\n", get_dpi_for_window(&fr));
+    // initialize default width_unit according to the width of the one symbol ("m") of the currently active font of this window.
+    float sf = 0.1 * std::max<size_t>(10, fr.GetTextExtent("m").x - 1);
+#endif // ENABLE_WX_3_1_3_DPI_CHANGED_EVENT
+
+    printf("scale factor = %f\n", sf);
+    return sf;
+}
+
+// scale input bitmap and return scale factor
+static float scale_bitmap(wxBitmap& bmp)
+{
+    float sf = get_scale_for_main_display();
+
+    // scale bitmap if needed
+    if (sf > 1.0) {
+        wxImage image = bmp.ConvertToImage();
+        if (image.IsOk() && image.GetWidth() != 0 && image.GetHeight() != 0)
+        {
+            int width   = int(sf * image.GetWidth());
+            int height  = int(sf * image.GetHeight());
+            image.Rescale(width, height, wxIMAGE_QUALITY_BILINEAR);
+
+            bmp = wxBitmap(std::move(image));
+        }
+    }
+
+    return sf;
+}
+
+static void word_wrap_string(wxString& input, int line_px_len, float scalef)
+{
+    // calculate count od symbols in one line according to the scale
+    int line_len = std::roundf( (float)line_px_len / (scalef * 10)) + 10;
+
+    int idx = -1;
+    int cur_len = 0;
+    for (size_t i = 0; i < input.Len(); i++)
+    {
+        cur_len++;
+        if (input[i] == ' ')
+            idx = i;
+        if (input[i] == '\n')
+        {
+            idx = -1;
+            cur_len = 0;
+        }
+        if (cur_len >= line_len && idx >= 0)
+        {
+            input[idx] = '\n';
+            cur_len = static_cast<int>(i) - idx;
+        }
+    }
+}
+
+static void DecorateSplashScreen(wxBitmap& bmp)
+{
+    wxASSERT(bmp.IsOk());
+    float scale_factor = scale_bitmap(bmp);
+
+    // use a memory DC to draw directly onto the bitmap
+    wxMemoryDC memDc(bmp);
+
+    // draw an dark grey box at the left of the splashscreen.
+    // this box will be 2/5 of the weight of the bitmap, and be at the left.
+    int banner_width = (bmp.GetWidth() / 5) * 2 - 2;
+    const wxRect banner_rect(wxPoint(0, (bmp.GetHeight() / 9) * 2), wxPoint(banner_width, bmp.GetHeight()));
+    wxDCBrushChanger bc(memDc, wxBrush(wxColour(51, 51, 51)));
+    wxDCPenChanger pc(memDc, wxPen(wxColour(51, 51, 51)));
+    memDc.DrawRectangle(banner_rect);
+
+    // title
+    wxString title_string = SLIC3R_APP_NAME;
+    wxFont title_font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+    title_font.SetPointSize(24);
+
+    // dynamically get the version to display
+    wxString version_string = _L("Version") + " " + std::string(SLIC3R_VERSION);
+    wxFont version_font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT).Larger().Larger();
+
+    // create a copyright notice that uses the year that this file was compiled
+    wxString year(__DATE__);
+    wxString cr_symbol = wxString::FromUTF8("\xc2\xa9");
+    wxString copyright_string = wxString::Format("%s 2016-%s Prusa Research.\n"
+                                               "%s 2011-2018 Alessandro Ranellucci.",
+                                cr_symbol, year.Mid(year.Length() - 4), cr_symbol) + "\n\n";
+    wxFont copyright_font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT).Larger();
+
+    copyright_string += //"Slic3r" + _L("is licensed under the") + _L("GNU Affero General Public License, version 3") + "\n\n" + 
+                        _L("PrusaSlicer is based on Slic3r by Alessandro Ranellucci and the RepRap community.") + "\n\n" +
+                        _L("Contributions by Henrik Brix Andersen, Nicolas Dandrimont, Mark Hindess, Petr Ledvina, Joseph Lenox, Y. Sapir, Mike Sheldrake, Vojtech Bubnik and numerous others.");
+
+    word_wrap_string(copyright_string, banner_width, scale_factor);
+
+    wxCoord margin = int(scale_factor * 20);
+
+    // draw the (orange) labels inside of our black box (at the left of the splashscreen)
+    memDc.SetTextForeground(wxColour(237, 107, 33));
+
+    memDc.SetFont(title_font);
+    memDc.DrawLabel(title_string,       banner_rect.Deflate(margin, 0), wxALIGN_TOP | wxALIGN_LEFT);
+
+    memDc.SetFont(version_font);
+    memDc.DrawLabel(version_string,     banner_rect.Deflate(margin, 2 * margin), wxALIGN_TOP | wxALIGN_LEFT);
+
+    memDc.SetFont(copyright_font);
+    memDc.DrawLabel(copyright_string,   banner_rect.Deflate(margin, 2 * margin), wxALIGN_BOTTOM | wxALIGN_LEFT);
+}
+
+class SplashScreen : public wxSplashScreen
+{
+public:
+    SplashScreen(const wxBitmap& bitmap, long splashStyle, int milliseconds, wxWindow* parent)
+        : wxSplashScreen(bitmap, splashStyle, milliseconds, parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                        wxSIMPLE_BORDER | wxFRAME_NO_TASKBAR)
+    {
+        wxASSERT(bitmap.IsOk());
+        m_main_bitmap = bitmap;
+
+        m_scale_factor = get_scale_for_main_display();
+    }
+
+    void SetText(const wxString& text)
+    {
+        SetBmp(m_main_bitmap);
+        if (!text.empty()) {
+            wxBitmap bitmap(m_main_bitmap);
+
+            wxMemoryDC memDC;
+            memDC.SelectObject(bitmap);
+
+            wxFont font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT).Bold().Larger();
+            memDC.SetFont(font);
+            memDC.SetTextForeground(wxColour(237, 107, 33));
+            memDC.DrawText(text, int(m_scale_factor * 45), int(m_scale_factor * 215));
+
+            memDC.SelectObject(wxNullBitmap);
+            SetBmp(bitmap);
+        }
+        wxYield();
+    }
+
+    void SetBmp(wxBitmap& bmp)
+    {
+        m_window->SetBitmap(bmp);
+        m_window->Refresh();
+        m_window->Update();
+    }
+
+private:
+    wxBitmap    m_main_bitmap;
+    float       m_scale_factor {1.0};
+};
 
 wxString file_wildcards(FileType file_type, const std::string &custom_extension)
 {
@@ -268,8 +435,15 @@ static void generic_exception_handle()
 
 IMPLEMENT_APP(GUI_App)
 
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+GUI_App::GUI_App(EAppMode mode)
+#else
 GUI_App::GUI_App()
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
     : wxApp()
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    , m_app_mode(mode)
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
     , m_em_unit(10)
     , m_imgui(new ImGuiWrapper())
     , m_wizard(nullptr)
@@ -325,6 +499,12 @@ void GUI_App::init_app_config()
 	if (!app_config)
 		app_config = new AppConfig();
 
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (is_gcode_viewer())
+        // disable config save to avoid to mess it up for the editor
+        app_config->enable_save(false);
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+
 	// load settings
 	app_conf_exists = app_config->exists();
 	if (app_conf_exists) {
@@ -361,18 +541,18 @@ bool GUI_App::on_init_inner()
     wxCHECK_MSG(wxDirExists(resources_dir), false,
         wxString::Format("Resources path does not exist or is not a directory: %s", resources_dir));
 
-     // Enable this to get the default Win32 COMCTRL32 behavior of static boxes.
+    // Enable this to get the default Win32 COMCTRL32 behavior of static boxes.
 //    wxSystemOptions::SetOption("msw.staticbox.optimized-paint", 0);
     // Enable this to disable Windows Vista themes for all wxNotebooks. The themes seem to lead to terrible
     // performance when working on high resolution multi-display setups.
 //    wxSystemOptions::SetOption("msw.notebook.themed-background", 0);
 
 //     Slic3r::debugf "wxWidgets version %s, Wx version %s\n", wxVERSION_STRING, wxVERSION;
-   
+
     std::string msg = Http::tls_global_init();
     std::string ssl_cert_store = app_config->get("tls_accepted_cert_store_location");
     bool ssl_accept = app_config->get("tls_cert_store_accepted") == "yes" && ssl_cert_store == Http::tls_system_cert_store();
-    
+
     if (!msg.empty() && !ssl_accept) {
         wxRichMessageDialog
             dlg(nullptr,
@@ -382,34 +562,59 @@ bool GUI_App::on_init_inner()
         if (dlg.ShowModal() != wxID_YES) return false;
 
         app_config->set("tls_cert_store_accepted",
-                        dlg.IsCheckBoxChecked() ? "yes" : "no");
+            dlg.IsCheckBoxChecked() ? "yes" : "no");
         app_config->set("tls_accepted_cert_store_location",
-                        dlg.IsCheckBoxChecked() ? Http::tls_system_cert_store() : "");
+            dlg.IsCheckBoxChecked() ? Http::tls_system_cert_store() : "");
     }
-    
+
     app_config->set("version", SLIC3R_VERSION);
     app_config->save();
-    
+/*
+    if (wxImage::FindHandler(wxBITMAP_TYPE_JPEG) == nullptr)
+        wxImage::AddHandler(new wxJPEGHandler());
+    if (wxImage::FindHandler(wxBITMAP_TYPE_PNG) == nullptr)
+        wxImage::AddHandler(new wxPNGHandler());
+*/
+    wxInitAllImageHandlers();
+
+    wxBitmap bitmap = create_scaled_bitmap("prusa_slicer_logo", nullptr, 400);
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    wxBitmap bmp(is_editor() ? from_u8(var("splashscreen.jpg")) : from_u8(var("splashscreen-gcodeviewer.jpg")), wxBITMAP_TYPE_JPEG);
+#else
+    wxBitmap bmp(from_u8(var("splashscreen.jpg")), wxBITMAP_TYPE_JPEG);
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+
+    DecorateSplashScreen(bmp);
+
+    SplashScreen* scrn = new SplashScreen(bmp.IsOk() ? bmp : bitmap, wxSPLASH_CENTRE_ON_SCREEN | wxSPLASH_TIMEOUT, 4000, nullptr);
+    scrn->SetText(_L("Loading configuration..."));
+
     preset_bundle = new PresetBundle();
-    
+
     // just checking for existence of Slic3r::data_dir is not enough : it may be an empty directory
     // supplied as argument to --datadir; in that case we should still run the wizard
     preset_bundle->setup_directories();
 
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (is_editor()) {
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 #ifdef __WXMSW__ 
-    associate_3mf_files();
+        associate_3mf_files();
 #endif // __WXMSW__
 
-    preset_updater = new PresetUpdater();
-    Bind(EVT_SLIC3R_VERSION_ONLINE, [this](const wxCommandEvent &evt) {
-        app_config->set("version_online", into_u8(evt.GetString()));
-        app_config->save();
-		if(this->plater_ != nullptr) {
-			if (*Semver::parse(SLIC3R_VERSION) < * Semver::parse(into_u8(evt.GetString()))) {
-				this->plater_->get_notification_manager()->push_notification(NotificationType::NewAppAviable, *(this->plater_->get_current_canvas3D()));
-			}
-		}
-    });
+        preset_updater = new PresetUpdater();
+        Bind(EVT_SLIC3R_VERSION_ONLINE, [this](const wxCommandEvent& evt) {
+            app_config->set("version_online", into_u8(evt.GetString()));
+            app_config->save();
+            if (this->plater_ != nullptr) {
+                if (*Semver::parse(SLIC3R_VERSION) < *Semver::parse(into_u8(evt.GetString()))) {
+                    this->plater_->get_notification_manager()->push_notification(NotificationType::NewAppAviable, *(this->plater_->get_current_canvas3D()));
+                }
+            }
+            });
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    }
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 
     // initialize label colors and fonts
     init_label_colours();
@@ -437,8 +642,11 @@ bool GUI_App::on_init_inner()
     Slic3r::I18N::set_translate_callback(libslic3r_translate_callback);
 
     // application frame
-    if (wxImage::FindHandler(wxBITMAP_TYPE_PNG) == nullptr)
-        wxImage::AddHandler(new wxPNGHandler());
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (is_editor())
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+        scrn->SetText(_L("Creating settings tabs..."));
+
     mainframe = new MainFrame();
     // hide settings tabs after first Layout
     mainframe->select_tab(0);
@@ -472,13 +680,20 @@ bool GUI_App::on_init_inner()
         static bool once = true;
         if (once) {
             once = false;
-			check_updates(false);
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+            if (preset_updater != nullptr) {
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+                check_updates(false);
 
-			CallAfter([this] {
-				config_wizard_startup();
-				preset_updater->slic3r_update_notify();
-				preset_updater->sync(preset_bundle);
-				});
+                CallAfter([this] {
+                    config_wizard_startup();
+                    preset_updater->slic3r_update_notify();
+                    preset_updater->sync(preset_bundle);
+                    });
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+            }
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+
 #ifdef _WIN32
 			//sets window property to mainframe so other instances can indentify it
 			OtherInstanceMessageHandler::init_windows_properties(mainframe, m_instance_hash_int);
@@ -486,8 +701,16 @@ bool GUI_App::on_init_inner()
         }
     });
 
-    load_current_presets();
-
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (is_gcode_viewer()) {
+        mainframe->update_layout();
+        if (plater_ != nullptr)
+            // ensure the selected technology is ptFFF
+            plater_->set_printer_technology(ptFFF);
+    }
+    else
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+        load_current_presets();
     mainframe->Show(true);
 
     /* Temporary workaround for the correct behavior of the Scrolled sidebar panel:
@@ -1124,10 +1347,10 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
                 app_layout_changed = dlg.settings_layout_changed();
             }
             if (app_layout_changed) {
-                mainframe->GetSizer()->Hide((size_t)0);
+                // hide full main_sizer for mainFrame
+                mainframe->GetSizer()->Show(false);
                 mainframe->update_layout();
                 mainframe->select_tab(0);
-                mainframe->GetSizer()->Show((size_t)0);
             }
             break;
         }

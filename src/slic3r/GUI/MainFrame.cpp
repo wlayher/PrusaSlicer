@@ -9,7 +9,6 @@
 #include <wx/tooltip.h>
 //#include <wx/glcanvas.h>
 #include <wx/filename.h>
-#include <wx/stdpaths.h>
 #include <wx/debug.h>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -31,6 +30,7 @@
 #include "I18N.hpp"
 #include "GLCanvas3D.hpp"
 #include "Plater.hpp"
+#include "../Utils/Process.hpp"
 
 #include <fstream>
 #include "GUI_App.hpp"
@@ -40,12 +40,6 @@
 #include <shlobj.h>
 #endif // _WIN32
 
-// For starting another PrusaSlicer instance on OSX.
-// Fails to compile on Windows on the build server.
-#ifdef __APPLE__
-    #include <boost/process/spawn.hpp>
-#endif
-
 namespace Slic3r {
 namespace GUI {
 
@@ -54,29 +48,6 @@ enum class ERescaleTarget
     Mainframe,
     SettingsDialog
 };
-
-static void rescale_dialog_after_dpi_change(MainFrame& mainframe, SettingsDialog& dialog, ERescaleTarget target)
-{
-    int mainframe_dpi = get_dpi_for_window(&mainframe);
-    int dialog_dpi = get_dpi_for_window(&dialog);
-    if (mainframe_dpi != dialog_dpi) {
-        if (target == ERescaleTarget::SettingsDialog) {
-            dialog.enable_force_rescale();
-#if wxVERSION_EQUAL_OR_GREATER_THAN(3,1,3)
-            dialog.GetEventHandler()->AddPendingEvent(wxDPIChangedEvent(wxSize(mainframe_dpi, mainframe_dpi), wxSize(dialog_dpi, dialog_dpi)));
-#else
-            dialog.GetEventHandler()->AddPendingEvent(DpiChangedEvent(EVT_DPI_CHANGED_SLICER, dialog_dpi, dialog.GetRect()));
-#endif // wxVERSION_EQUAL_OR_GREATER_THAN
-        } else {
-#if wxVERSION_EQUAL_OR_GREATER_THAN(3,1,3)
-            mainframe.GetEventHandler()->AddPendingEvent(wxDPIChangedEvent(wxSize(dialog_dpi, dialog_dpi), wxSize(mainframe_dpi, mainframe_dpi)));
-#else
-            mainframe.enable_force_rescale();
-            mainframe.GetEventHandler()->AddPendingEvent(DpiChangedEvent(EVT_DPI_CHANGED_SLICER, mainframe_dpi, mainframe.GetRect()));
-#endif // wxVERSION_EQUAL_OR_GREATER_THAN
-        }
-    }
-}
 
 MainFrame::MainFrame() :
 DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_STYLE, "mainframe"),
@@ -115,7 +86,6 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
     }
 #endif // ENABLE_GCODE_VIEWER_TASKBAR_ICON
 
-//    SetIcon(wxIcon(Slic3r::var("PrusaSlicer_128px.png"), wxBITMAP_TYPE_PNG));
     // Load the icon either from the exe, or from the ico file.
 #if _WIN32
     {
@@ -125,7 +95,24 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
         SetIcon(wxIcon(szExeFileName, wxBITMAP_TYPE_ICO));
     }
 #else
-    SetIcon(wxIcon(Slic3r::var("PrusaSlicer_128px.png"), wxBITMAP_TYPE_PNG));
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    switch (wxGetApp().get_app_mode())
+    {
+    default:
+    case GUI_App::EAppMode::Editor:
+    {
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+        SetIcon(wxIcon(Slic3r::var("PrusaSlicer_128px.png"), wxBITMAP_TYPE_PNG));
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+        break;
+    }
+    case GUI_App::EAppMode::GCodeViewer:
+    {
+        SetIcon(wxIcon(Slic3r::var("PrusaSlicer-gcodeviewer_128px.png"), wxBITMAP_TYPE_PNG));
+        break;
+    }
+    }
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 #endif // _WIN32
 
 	// initialize status bar
@@ -139,8 +126,15 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
     // initialize tabpanel and menubar
     init_tabpanel();
 #if ENABLE_GCODE_VIEWER
-    init_editor_menubar();
-    init_gcodeviewer_menubar();
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (wxGetApp().is_gcode_viewer())
+        init_menubar_as_gcodeviewer();
+    else
+        init_menubar_as_editor();
+#else
+    init_menubar_as_editor();
+    init_menubar_as_gcodeviewer();
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 
 #if _WIN32
     // This is needed on Windows to fake the CTRL+# of the window menu when using the numpad
@@ -171,7 +165,10 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
     sizer->Add(m_main_sizer, 1, wxEXPAND);
     SetSizer(sizer);
     // initialize layout from config
-    update_layout();
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (wxGetApp().is_editor())
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+        update_layout();
     sizer->SetSizeHints(this);
     Fit();
 
@@ -310,9 +307,6 @@ void MainFrame::update_layout()
             m_plater_page = nullptr;
         }
 
-        if (m_layout == ESettingsLayout::Dlg)
-            rescale_dialog_after_dpi_change(*this, m_settings_dialog, ERescaleTarget::Mainframe);
-
         clean_sizer(m_main_sizer);
         clean_sizer(m_settings_dialog.GetSizer());
 
@@ -326,10 +320,17 @@ void MainFrame::update_layout()
     };
 
 #if ENABLE_GCODE_VIEWER
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    ESettingsLayout layout = wxGetApp().is_gcode_viewer() ? ESettingsLayout::GCodeViewer :
+        (wxGetApp().app_config->get("old_settings_layout_mode") == "1" ? ESettingsLayout::Old :
+            wxGetApp().app_config->get("new_settings_layout_mode") == "1" ? ESettingsLayout::New :
+            wxGetApp().app_config->get("dlg_settings_layout_mode") == "1" ? ESettingsLayout::Dlg : ESettingsLayout::Old);
+#else
     ESettingsLayout layout = (m_mode == EMode::GCodeViewer) ? ESettingsLayout::GCodeViewer :
         (wxGetApp().app_config->get("old_settings_layout_mode") == "1" ? ESettingsLayout::Old :
          wxGetApp().app_config->get("new_settings_layout_mode") == "1" ? ESettingsLayout::New :
          wxGetApp().app_config->get("dlg_settings_layout_mode") == "1" ? ESettingsLayout::Dlg : ESettingsLayout::Old);
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 #else
     ESettingsLayout layout = wxGetApp().app_config->get("old_settings_layout_mode") == "1" ? ESettingsLayout::Old :
         wxGetApp().app_config->get("new_settings_layout_mode") == "1" ? ESettingsLayout::New :
@@ -346,6 +347,16 @@ void MainFrame::update_layout()
     // Remove old settings
     if (m_layout != ESettingsLayout::Unknown)
         restore_to_creation();
+
+#ifdef __WXMSW__
+    enum class State {
+        noUpdate,
+        fromDlg,
+        toDlg
+    };
+    State update_scaling_state = m_layout == ESettingsLayout::Dlg ? State::fromDlg :
+                                 layout   == ESettingsLayout::Dlg ? State::toDlg   : State::noUpdate;
+#endif //__WXMSW__
 
     m_layout = layout;
 
@@ -383,9 +394,6 @@ void MainFrame::update_layout()
         m_main_sizer->Add(m_plater, 1, wxEXPAND);
         m_tabpanel->Reparent(&m_settings_dialog);
         m_settings_dialog.GetSizer()->Add(m_tabpanel, 1, wxEXPAND);
-
-        rescale_dialog_after_dpi_change(*this, m_settings_dialog, ERescaleTarget::SettingsDialog);
-
         m_tabpanel->Show();
         m_plater->Show();
         break;
@@ -394,11 +402,47 @@ void MainFrame::update_layout()
     case ESettingsLayout::GCodeViewer:
     {
         m_main_sizer->Add(m_plater, 1, wxEXPAND);
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+        m_plater->set_bed_shape({ { 0.0, 0.0 }, { 200.0, 0.0 }, { 200.0, 200.0 }, { 0.0, 200.0 } }, "", "", true);
+        m_plater->enable_view_toolbar(false);
+        m_plater->get_collapse_toolbar().set_enabled(false);
+        m_plater->collapse_sidebar(true);
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
         m_plater->Show();
         break;
     }
 #endif // ENABLE_GCODE_VIEWER
     }
+
+#ifdef __WXMSW__
+    if (update_scaling_state != State::noUpdate)
+    {
+        int mainframe_dpi   = get_dpi_for_window(this);
+        int dialog_dpi      = get_dpi_for_window(&m_settings_dialog);
+        if (mainframe_dpi != dialog_dpi) {
+            wxSize oldDPI = update_scaling_state == State::fromDlg ? wxSize(dialog_dpi, dialog_dpi) : wxSize(mainframe_dpi, mainframe_dpi);
+            wxSize newDPI = update_scaling_state == State::toDlg   ? wxSize(dialog_dpi, dialog_dpi) : wxSize(mainframe_dpi, mainframe_dpi);
+
+            if (update_scaling_state == State::fromDlg)
+                this->enable_force_rescale();
+            else
+                (&m_settings_dialog)->enable_force_rescale();
+
+            wxWindow* win { nullptr };
+            if (update_scaling_state == State::fromDlg)
+                win = this;
+            else
+                win = &m_settings_dialog;
+
+#if wxVERSION_EQUAL_OR_GREATER_THAN(3,1,3)
+            m_tabpanel->MSWUpdateOnDPIChange(oldDPI, newDPI);
+            win->GetEventHandler()->AddPendingEvent(wxDPIChangedEvent(oldDPI, newDPI));
+#else
+            win->GetEventHandler()->AddPendingEvent(DpiChangedEvent(EVT_DPI_CHANGED_SLICER, newDPI, win->GetRect()));
+#endif // wxVERSION_EQUAL_OR_GREATER_THAN
+        }
+    }
+#endif //__WXMSW__
 
 //#ifdef __APPLE__
 //    // Using SetMinSize() on Mac messes up the window position in some cases
@@ -471,6 +515,7 @@ void MainFrame::shutdown()
 
     if (m_plater != nullptr) {
 #if ENABLE_GCODE_VIEWER
+#if !ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
         // restore sidebar if it was hidden when switching to gcode viewer mode
         if (m_restore_from_gcode_viewer.collapsed_sidebar)
             m_plater->collapse_sidebar(false);
@@ -478,6 +523,7 @@ void MainFrame::shutdown()
         // restore sla printer if it was deselected when switching to gcode viewer mode
         if (m_restore_from_gcode_viewer.sla_technology)
             m_plater->set_printer_technology(ptSLA);
+#endif // !ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 #endif // ENABLE_GCODE_VIEWER
         // Stop the background thread (Windows and Linux).
         // Disconnect from a 3DConnextion driver (OSX).
@@ -579,7 +625,10 @@ void MainFrame::init_tabpanel()
     // or when the preset's "modified" status changes.
     Bind(EVT_TAB_PRESETS_CHANGED, &MainFrame::on_presets_changed, this); // #ys_FIXME_to_delete
 
-    create_preset_tabs();
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (wxGetApp().is_editor())
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+        create_preset_tabs();
 
     if (m_plater) {
         // load initial config
@@ -787,9 +836,6 @@ void MainFrame::on_dpi_changed(const wxRect& suggested_rect)
     this->SetSize(sz);
 
     this->Maximize(is_maximized);
-
-    if (m_layout == ESettingsLayout::Dlg)
-        rescale_dialog_after_dpi_change(*this, m_settings_dialog, ERescaleTarget::SettingsDialog);
 }
 
 void MainFrame::on_sys_color_changed()
@@ -883,7 +929,7 @@ static void add_common_view_menu_items(wxMenu* view_menu, MainFrame* mainFrame, 
         "", nullptr, [can_change_view]() { return can_change_view(); }, mainFrame);
 }
 
-void MainFrame::init_editor_menubar()
+void MainFrame::init_menubar_as_editor()
 #else
 void MainFrame::init_menubar()
 #endif // ENABLE_GCODE_VIEWER
@@ -1046,8 +1092,9 @@ void MainFrame::init_menubar()
         append_menu_item(fileMenu, wxID_ANY, _L("&Repair STL file") + dots, _L("Automatically repair an STL file"),
             [this](wxCommandEvent&) { repair_stl(); }, "wrench", nullptr,
             [this]() { return true; }, this);
-#if ENABLE_GCODE_VIEWER
         fileMenu->AppendSeparator();
+#if ENABLE_GCODE_VIEWER
+#if !ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
         append_menu_item(fileMenu, wxID_ANY, _L("&G-code preview"), _L("Switch to G-code preview mode"),
             [this](wxCommandEvent&) {
                 if (m_plater->model().objects.empty() ||
@@ -1055,7 +1102,10 @@ void MainFrame::init_menubar()
                         wxString(SLIC3R_APP_NAME) + " - " + _L("Switch to G-code preview mode"), wxYES_NO | wxYES_DEFAULT | wxICON_QUESTION | wxCENTRE).ShowModal() == wxID_YES)
                     set_mode(EMode::GCodeViewer);
             }, "", nullptr);
+#endif // !ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 #endif // ENABLE_GCODE_VIEWER
+        append_menu_item(fileMenu, wxID_ANY, _L("&G-code preview") + dots, _L("Open G-code viewer"),
+            [this](wxCommandEvent&) { start_new_gcodeviewer_open_file(this); }, "", nullptr);
         fileMenu->AppendSeparator();
         append_menu_item(fileMenu, wxID_EXIT, _L("&Quit"), wxString::Format(_L("Quit %s"), SLIC3R_APP_NAME),
             [this](wxCommandEvent&) { Close(false); });
@@ -1172,20 +1222,11 @@ void MainFrame::init_menubar()
 
         windowMenu->AppendSeparator();
         append_menu_item(windowMenu, wxID_ANY, _L("Print &Host Upload Queue") + "\tCtrl+J", _L("Display the Print Host Upload Queue window"),
-            [this](wxCommandEvent&) { m_printhost_queue_dlg->Show(); }, "upload_queue", nullptr,
-            [this]() {return true; }, this);
+            [this](wxCommandEvent&) { m_printhost_queue_dlg->Show(); }, "upload_queue", nullptr, [this]() {return true; }, this);
         
         windowMenu->AppendSeparator();
         append_menu_item(windowMenu, wxID_ANY, _(L("Open new instance")) + "\tCtrl+I", _(L("Open a new PrusaSlicer instance")),
-                         [this](wxCommandEvent&) {
-                             wxString path = wxStandardPaths::Get().GetExecutablePath();
-#ifdef __APPLE__
-                             boost::process::spawn((const char*)path.c_str());
-#else
-                             wxExecute(wxStandardPaths::Get().GetExecutablePath(), wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE | wxEXEC_MAKE_GROUP_LEADER);
-#endif
-                         }, "upload_queue", nullptr,
-                         [this]() {return true; }, this);
+			[this](wxCommandEvent&) { start_new_slicer(); }, "", nullptr);
     }
 
     // View menu
@@ -1278,6 +1319,17 @@ void MainFrame::init_menubar()
     // assign menubar to frame after appending items, otherwise special items
     // will not be handled correctly
 #if ENABLE_GCODE_VIEWER
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    m_menubar = new wxMenuBar();
+    m_menubar->Append(fileMenu, _L("&File"));
+    if (editMenu) m_menubar->Append(editMenu, _L("&Edit"));
+    m_menubar->Append(windowMenu, _L("&Window"));
+    if (viewMenu) m_menubar->Append(viewMenu, _L("&View"));
+    // Add additional menus from C++
+    wxGetApp().add_config_menu(m_menubar);
+    m_menubar->Append(helpMenu, _L("&Help"));
+    SetMenuBar(m_menubar);
+#else
     m_editor_menubar = new wxMenuBar();
     m_editor_menubar->Append(fileMenu, _L("&File"));
     if (editMenu) m_editor_menubar->Append(editMenu, _L("&Edit"));
@@ -1287,15 +1339,16 @@ void MainFrame::init_menubar()
     wxGetApp().add_config_menu(m_editor_menubar);
     m_editor_menubar->Append(helpMenu, _L("&Help"));
     SetMenuBar(m_editor_menubar);
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 #else
     auto menubar = new wxMenuBar();
-    menubar->Append(fileMenu, _(L("&File")));
-    if (editMenu) menubar->Append(editMenu, _(L("&Edit")));
-    menubar->Append(windowMenu, _(L("&Window")));
-    if (viewMenu) menubar->Append(viewMenu, _(L("&View")));
+    menubar->Append(fileMenu, _L("&File"));
+    if (editMenu) menubar->Append(editMenu, _L("&Edit"));
+    menubar->Append(windowMenu, _L("&Window"));
+    if (viewMenu) menubar->Append(viewMenu, _L("&View"));
     // Add additional menus from C++
     wxGetApp().add_config_menu(menubar);
-    menubar->Append(helpMenu, _(L("&Help")));
+    menubar->Append(helpMenu, _L("&Help"));
     SetMenuBar(menubar);
 #endif // ENABLE_GCODE_VIEWER
 
@@ -1303,7 +1356,11 @@ void MainFrame::init_menubar()
     // This fixes a bug on Mac OS where the quit command doesn't emit window close events
     // wx bug: https://trac.wxwidgets.org/ticket/18328
 #if ENABLE_GCODE_VIEWER
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    wxMenu* apple_menu = m_menubar->OSXGetAppleMenu();
+#else
     wxMenu* apple_menu = m_editor_menubar->OSXGetAppleMenu();
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 #else
     wxMenu *apple_menu = menubar->OSXGetAppleMenu();
 #endif // ENABLE_GCODE_VIEWER
@@ -1312,18 +1369,14 @@ void MainFrame::init_menubar()
             Close();
         }, wxID_EXIT);
     }
-#endif
+#endif // __APPLE__
 
     if (plater()->printer_technology() == ptSLA)
-#if ENABLE_GCODE_VIEWER
-        update_editor_menubar();
-#else
         update_menubar();
-#endif // ENABLE_GCODE_VIEWER
 }
 
 #if ENABLE_GCODE_VIEWER
-void MainFrame::init_gcodeviewer_menubar()
+void MainFrame::init_menubar_as_gcodeviewer()
 {
     wxMenu* fileMenu = new wxMenu;
     {
@@ -1334,9 +1387,11 @@ void MainFrame::init_gcodeviewer_menubar()
         append_menu_item(fileMenu, wxID_ANY, _L("Export &toolpaths as OBJ") + dots, _L("Export toolpaths as OBJ"),
             [this](wxCommandEvent&) { if (m_plater != nullptr) m_plater->export_toolpaths_to_obj(); }, "export_plater", nullptr,
             [this]() {return can_export_toolpaths(); }, this);
+#if !ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
         fileMenu->AppendSeparator();
         append_menu_item(fileMenu, wxID_ANY, _L("Exit &G-code preview"), _L("Switch to editor mode"),
             [this](wxCommandEvent&) { set_mode(EMode::Editor); });
+#endif // !ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
         fileMenu->AppendSeparator();
         append_menu_item(fileMenu, wxID_EXIT, _L("&Quit"), wxString::Format(_L("Quit %s"), SLIC3R_APP_NAME),
             [this](wxCommandEvent&) { Close(false); });
@@ -1352,13 +1407,37 @@ void MainFrame::init_gcodeviewer_menubar()
     // helpmenu
     auto helpMenu = generate_help_menu();
 
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    m_menubar = new wxMenuBar();
+    m_menubar->Append(fileMenu, _L("&File"));
+    if (viewMenu != nullptr) m_menubar->Append(viewMenu, _L("&View"));
+    m_menubar->Append(helpMenu, _L("&Help"));
+    SetMenuBar(m_menubar);
+#else
     m_gcodeviewer_menubar = new wxMenuBar();
     m_gcodeviewer_menubar->Append(fileMenu, _L("&File"));
-    if ((viewMenu != nullptr))
+    if (viewMenu != nullptr)
         m_gcodeviewer_menubar->Append(viewMenu, _L("&View"));
     m_gcodeviewer_menubar->Append(helpMenu, _L("&Help"));
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+
+#ifdef __APPLE__
+    // This fixes a bug on Mac OS where the quit command doesn't emit window close events
+    // wx bug: https://trac.wxwidgets.org/ticket/18328
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    wxMenu* apple_menu = m_menubar->OSXGetAppleMenu();
+#else
+    wxMenu* apple_menu = m_gcodeviewer_menubar->OSXGetAppleMenu();
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (apple_menu != nullptr) {
+        apple_menu->Bind(wxEVT_MENU, [this](wxCommandEvent&) {
+            Close();
+            }, wxID_EXIT);
+    }
+#endif // __APPLE__
 }
 
+#if !ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 void MainFrame::set_mode(EMode mode)
 {
     if (m_mode == mode)
@@ -1424,7 +1503,7 @@ void MainFrame::set_mode(EMode mode)
             TCHAR szExeFileName[MAX_PATH];
             GetModuleFileName(nullptr, szExeFileName, MAX_PATH);
             SetIcon(wxIcon(szExeFileName, wxBITMAP_TYPE_ICO));
-    }
+        }
 #else
         SetIcon(wxIcon(Slic3r::var("PrusaSlicer_128px.png"), wxBITMAP_TYPE_PNG));
 #endif // _WIN32
@@ -1480,11 +1559,11 @@ void MainFrame::set_mode(EMode mode)
 
         m_plater->Thaw();
 
-        SetIcon(wxIcon(Slic3r::var("PrusaSlicerGCodeViewer_128px.png"), wxBITMAP_TYPE_PNG));
+        SetIcon(wxIcon(Slic3r::var("PrusaSlicer-gcodeviewer_128px.png"), wxBITMAP_TYPE_PNG));
 #if ENABLE_GCODE_VIEWER_TASKBAR_ICON
         if (m_taskbar_icon != nullptr) {
             m_taskbar_icon->RemoveIcon();
-            m_taskbar_icon->SetIcon(wxIcon(Slic3r::var("PrusaSlicerGCodeViewer_128px.png"), wxBITMAP_TYPE_PNG), "PrusaSlicer-GCode viewer");
+            m_taskbar_icon->SetIcon(wxIcon(Slic3r::var("PrusaSlicer-gcodeviewer_128px.png"), wxBITMAP_TYPE_PNG), "PrusaSlicer-GCode viewer");
         }
 #endif // ENABLE_GCODE_VIEWER_TASKBAR_ICON
 
@@ -1492,20 +1571,22 @@ void MainFrame::set_mode(EMode mode)
     }
     }
 }
+#endif // !ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
 #endif // ENABLE_GCODE_VIEWER
 
-#if ENABLE_GCODE_VIEWER
-void MainFrame::update_editor_menubar()
-#else
 void MainFrame::update_menubar()
-#endif // ENABLE_GCODE_VIEWER
 {
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (wxGetApp().is_gcode_viewer())
+        return;
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+
     const bool is_fff = plater()->printer_technology() == ptFFF;
 
-    m_changeable_menu_items[miExport]       ->SetItemLabel((is_fff ? _(L("Export &G-code"))         : _(L("E&xport"))       ) + dots     + "\tCtrl+G");
-    m_changeable_menu_items[miSend]         ->SetItemLabel((is_fff ? _(L("S&end G-code"))           : _(L("S&end to print"))) + dots    + "\tCtrl+Shift+G");
+    m_changeable_menu_items[miExport]       ->SetItemLabel((is_fff ? _L("Export &G-code")         : _L("E&xport"))        + dots    + "\tCtrl+G");
+    m_changeable_menu_items[miSend]         ->SetItemLabel((is_fff ? _L("S&end G-code")           : _L("S&end to print")) + dots    + "\tCtrl+Shift+G");
 
-    m_changeable_menu_items[miMaterialTab]  ->SetItemLabel((is_fff ? _(L("&Filament Settings Tab")) : _(L("Mate&rial Settings Tab")))   + "\tCtrl+3");
+    m_changeable_menu_items[miMaterialTab]  ->SetItemLabel((is_fff ? _L("&Filament Settings Tab") : _L("Mate&rial Settings Tab"))   + "\tCtrl+3");
     m_changeable_menu_items[miMaterialTab]  ->SetBitmap(create_scaled_bitmap(is_fff ? "spool"   : "resin"));
 
     m_changeable_menu_items[miPrinterTab]   ->SetBitmap(create_scaled_bitmap(is_fff ? "printer" : "sla_printer"));
@@ -1988,11 +2069,21 @@ SettingsDialog::SettingsDialog(MainFrame* mainframe)
         wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxMINIMIZE_BOX | wxMAXIMIZE_BOX, "settings_dialog"),
     m_main_frame(mainframe)
 {
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (wxGetApp().is_gcode_viewer())
+        return;
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+
+#if ENABLE_WX_3_1_3_DPI_CHANGED_EVENT && defined(__WXMSW__)
+    // ys_FIXME! temporary workaround for correct font scaling
+    // Because of from wxWidgets 3.1.3 auto rescaling is implemented for the Fonts,
+    // From the very beginning set dialog font to the wxSYS_DEFAULT_GUI_FONT
+    this->SetFont(wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT));
+#else
     this->SetFont(wxGetApp().normal_font());
+#endif // ENABLE_WX_3_1_3_DPI_CHANGED_EVENT
     this->SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
 
-
-//    SetIcon(wxIcon(Slic3r::var("PrusaSlicer_128px.png"), wxBITMAP_TYPE_PNG));
     // Load the icon either from the exe, or from the ico file.
 #if _WIN32
     {
@@ -2055,6 +2146,11 @@ SettingsDialog::SettingsDialog(MainFrame* mainframe)
 
 void SettingsDialog::on_dpi_changed(const wxRect& suggested_rect)
 {
+#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+    if (wxGetApp().is_gcode_viewer())
+        return;
+#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+
     const int& em = em_unit();
     const wxSize& size = wxSize(85 * em, 50 * em);
 
