@@ -101,6 +101,9 @@ void AppConfig::set_defaults()
     if (get("use_inches").empty())
         set("use_inches", "0");
 
+    if (get("show_splash_screen").empty())
+        set("show_splash_screen", "1");
+
     // Remove legacy window positions/sizes
     erase("", "main_frame_maximized");
     erase("", "main_frame_pos");
@@ -179,10 +182,10 @@ std::string AppConfig::load()
 
 void AppConfig::save()
 {
-#if ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+#if ENABLE_GCODE_VIEWER
     if (!m_save_enabled)
         return;
-#endif // ENABLE_GCODE_VIEWER_AS_STANDALONE_APPLICATION
+#endif // ENABLE_GCODE_VIEWER
 
     // The config is first written to a file with a PID suffix and then moved
     // to avoid race conditions with multiple instances of Slic3r
