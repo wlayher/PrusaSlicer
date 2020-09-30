@@ -22,6 +22,8 @@
 #include <GL/glew.h>
 #include <boost/log/trivial.hpp>
 #include <boost/nowide/cstdio.hpp>
+#include <wx/progdlg.h>
+#include <wx/numformatter.h>
 
 #include <array>
 #include <algorithm>
@@ -861,6 +863,9 @@ void GCodeViewer::load_toolpaths(const GCodeProcessor::Result& gcode_result)
     if (m_moves_count == 0)
         return;
 
+    wxProgressDialog progress_dialog(_L("Generating toolpaths"), "...",
+        100, wxGetApp().plater(), wxPD_AUTO_HIDE | wxPD_APP_MODAL);
+
     for (size_t i = 0; i < m_moves_count; ++i) {
         const GCodeProcessor::MoveVertex& move = gcode_result.moves[i];
         if (wxGetApp().is_gcode_viewer())
@@ -871,9 +876,6 @@ void GCodeViewer::load_toolpaths(const GCodeProcessor::Result& gcode_result)
                 m_paths_bounding_box.merge(move.position.cast<double>());
         }
     }
-
-    // add origin
-    m_paths_bounding_box.merge(Vec3d::Zero());
 
     // max bounding box (account for tool marker)
     m_max_bounding_box = m_paths_bounding_box;
@@ -1230,6 +1232,8 @@ void GCodeViewer::load_toolpaths(const GCodeProcessor::Result& gcode_result)
             prev_length = length;
     };
 
+    wxBusyCursor busy;
+
     // to reduce the peak in memory usage, we split the generation of the vertex and index buffers in two steps.
     // the data are deleted as soon as they are sent to the gpu.
     std::vector<std::vector<float>> vertices(m_buffers.size());
@@ -1240,6 +1244,11 @@ void GCodeViewer::load_toolpaths(const GCodeProcessor::Result& gcode_result)
         // skip first vertex
         if (i == 0)
             continue;
+
+        progress_dialog.Update(int(100.0f * float(i) / (2.0f * float(m_moves_count))),
+            _L("Generating vertex buffer") + " (" + wxNumberFormatter::ToString((long)i, wxNumberFormatter::Style_None) + "/" +
+            wxNumberFormatter::ToString((long)m_moves_count, wxNumberFormatter::Style_None) + ")");
+        progress_dialog.Fit();
 
         const GCodeProcessor::MoveVertex& prev = gcode_result.moves[i - 1];
         const GCodeProcessor::MoveVertex& curr = gcode_result.moves[i];
@@ -1306,6 +1315,11 @@ void GCodeViewer::load_toolpaths(const GCodeProcessor::Result& gcode_result)
         // skip first vertex
         if (i == 0)
             continue;
+
+        progress_dialog.Update(int(100.0f * float(m_moves_count + i) / (2.0f * float(m_moves_count))),
+            _L("Generating index buffers") + " (" + wxNumberFormatter::ToString((long)i, wxNumberFormatter::Style_None) + "/" +
+            wxNumberFormatter::ToString((long)m_moves_count, wxNumberFormatter::Style_None) + ")");
+        progress_dialog.Fit();
 
         const GCodeProcessor::MoveVertex& prev = gcode_result.moves[i - 1];
         const GCodeProcessor::MoveVertex& curr = gcode_result.moves[i];

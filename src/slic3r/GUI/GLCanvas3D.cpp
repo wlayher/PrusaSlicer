@@ -511,7 +511,7 @@ void GLCanvas3D::LayersEditing::adaptive_layer_height_profile(GLCanvas3D& canvas
 {
     this->update_slicing_parameters();
     m_layer_height_profile = layer_height_profile_adaptive(*m_slicing_parameters, *m_model_object, quality_factor);
-    const_cast<ModelObject*>(m_model_object)->layer_height_profile = m_layer_height_profile;
+    const_cast<ModelObject*>(m_model_object)->layer_height_profile.set(m_layer_height_profile);
     m_layers_texture.valid = false;
     canvas.post_event(SimpleEvent(EVT_GLCANVAS_SCHEDULE_BACKGROUND_PROCESS));
 }
@@ -520,7 +520,7 @@ void GLCanvas3D::LayersEditing::smooth_layer_height_profile(GLCanvas3D& canvas, 
 {
     this->update_slicing_parameters();
     m_layer_height_profile = smooth_height_profile(m_layer_height_profile, *m_slicing_parameters, smoothing_params);
-    const_cast<ModelObject*>(m_model_object)->layer_height_profile = m_layer_height_profile;
+    const_cast<ModelObject*>(m_model_object)->layer_height_profile.set(m_layer_height_profile);
     m_layers_texture.valid = false;
     canvas.post_event(SimpleEvent(EVT_GLCANVAS_SCHEDULE_BACKGROUND_PROCESS));
 }
@@ -560,7 +560,7 @@ void GLCanvas3D::LayersEditing::accept_changes(GLCanvas3D& canvas)
     if (last_object_id >= 0) {
         if (m_layer_height_profile_modified) {
             wxGetApp().plater()->take_snapshot(_(L("Variable layer height - Manual edit")));
-            const_cast<ModelObject*>(m_model_object)->layer_height_profile = m_layer_height_profile;
+            const_cast<ModelObject*>(m_model_object)->layer_height_profile.set(m_layer_height_profile);
 			canvas.post_event(SimpleEvent(EVT_GLCANVAS_SCHEDULE_BACKGROUND_PROCESS));
         }
     }
@@ -5420,7 +5420,9 @@ void GLCanvas3D::_render_background() const
 #if ENABLE_GCODE_VIEWER
     bool use_error_color = false;
     if (wxGetApp().is_editor()) {
-        use_error_color = m_dynamic_background_enabled;
+        use_error_color = m_dynamic_background_enabled &&
+            (wxGetApp().preset_bundle->printers.get_edited_preset().printer_technology() != ptSLA || !m_volumes.empty());
+
         if (!m_volumes.empty())
             use_error_color &= _is_any_volume_outside();
         else {
