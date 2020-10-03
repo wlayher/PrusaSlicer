@@ -18,6 +18,8 @@
 #include <wx/debug.h>
 #include <wx/settings.h>
 
+#include <chrono>
+
 #include "Event.hpp"
 
 class wxCheckBox;
@@ -391,6 +393,16 @@ inline int hex_digit_to_int(const char c)
         (c >= 'a' && c <= 'f') ? int(c - 'a') + 10 : -1;
 }
 #endif // ENABLE_GCODE_VIEWER
+
+class TaskTimer
+{
+    std::chrono::milliseconds   start_timer;
+    std::string                 task_name;
+public:
+    TaskTimer(std::string task_name);
+
+    ~TaskTimer();
+};
 
 }}
 

@@ -123,6 +123,10 @@ public:
 
             memDC.SelectObject(wxNullBitmap);
             set_bitmap(bitmap);
+#ifdef __WXOSX__
+            // without this code splash screen wouldn't be updated under OSX
+            wxYield();
+#endif
         }
     }
 
@@ -531,6 +535,41 @@ static void generic_exception_handle()
     }
 }
 
+void GUI_App::AFTER_INIT_LOADS::on_loads(GUI_App* gui)
+{
+    if (!gui->initialized())
+        return;
+
+#if ENABLE_GCODE_VIEWER
+    if (m_start_as_gcodeviewer) {
+        if (!m_input_files.empty())
+            gui->plater()->load_gcode(wxString::FromUTF8(m_input_files[0].c_str()));
+    }
+    else {
+#endif // ENABLE_GCODE_VIEWER_AS
+#if 0
+        // Load the cummulative config over the currently active profiles.
+        //FIXME if multiple configs are loaded, only the last one will have an effect.
+        // We need to decide what to do about loading of separate presets (just print preset, just filament preset etc).
+        // As of now only the full configs are supported here.
+        if (!m_print_config.empty())
+            gui->mainframe->load_config(m_print_config);
+#endif
+        if (!m_load_configs.empty())
+            // Load the last config to give it a name at the UI. The name of the preset may be later
+            // changed by loading an AMF or 3MF.
+            //FIXME this is not strictly correct, as one may pass a print/filament/printer profile here instead of a full config.
+            gui->mainframe->load_config_file(m_load_configs.back());
+        // If loading a 3MF file, the config is loaded from the last one.
+        if (!m_input_files.empty())
+            gui->plater()->load_files(m_input_files, true, true);
+        if (!m_extra_config.empty())
+            gui->mainframe->load_config(m_extra_config);
+#if ENABLE_GCODE_VIEWER
+    }
+#endif // ENABLE_GCODE_VIEWER
+  }
+
 IMPLEMENT_APP(GUI_App)
 
 #if ENABLE_GCODE_VIEWER
@@ -678,7 +717,7 @@ bool GUI_App::on_init_inner()
     SplashScreen* scrn = nullptr;
     if (app_config->get("show_splash_screen") == "1")
     {
-        wxBitmap bmp = SplashScreen::MakeBitmap(wxBitmap(from_u8(var("splashscreen.jpg")), wxBITMAP_TYPE_JPEG));
+        wxBitmap bmp = SplashScreen::MakeBitmap(wxBitmap(from_u8(var(is_editor() ? "splashscreen.jpg" : "splashscreen-gcodepreview.jpg")), wxBITMAP_TYPE_JPEG));
 
         // Detect position (display) to show the splash screen
         // Now this position is equal to the mainframe position
@@ -760,7 +799,7 @@ bool GUI_App::on_init_inner()
 
     mainframe = new MainFrame();
     // hide settings tabs after first Layout
-    mainframe->select_tab(0);
+    mainframe->select_tab(size_t(0));
 
     sidebar().obj_list()->init_objects(); // propagate model objects to object list
 //     update_mode(); // !!! do that later
@@ -780,6 +819,13 @@ bool GUI_App::on_init_inner()
             app_config->save();
 
         this->obj_manipul()->update_if_dirty();
+
+        static bool update_gui_after_init = true;
+        if (update_gui_after_init)
+        {
+            update_gui_after_init = false;
+            m_after_init_loads.on_loads(this);
+        }
 
 		// Preset updating & Configwizard are done after the above initializations,
 	    // and after MainFrame is created & shown.
@@ -1012,7 +1058,7 @@ void GUI_App::recreate_GUI(const wxString& msg_name)
     MainFrame *old_main_frame = mainframe;
     mainframe = new MainFrame();
     // hide settings tabs after first Layout
-    mainframe->select_tab(0);
+    mainframe->select_tab(size_t(0));
     // Propagate model objects to object list.
     sidebar().obj_list()->init_objects();
     SetTopWindow(mainframe);
@@ -1461,7 +1507,7 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
                 // hide full main_sizer for mainFrame
                 mainframe->GetSizer()->Show(false);
                 mainframe->update_layout();
-                mainframe->select_tab(0);
+                mainframe->select_tab(size_t(0));
             }
             break;
         }
@@ -1526,41 +1572,8 @@ bool GUI_App::check_unsaved_changes(const wxString &header)
 
         if (dlg.save_preset())  // save selected changes
         {
-            struct NameType
-            {
-                std::string     name;
-                Preset::Type    type {Preset::TYPE_INVALID};
-            };
-
-            std::vector<NameType> names_and_types;
-
-            // for system/default/external presets we should take an edited name
-            std::vector<Preset::Type> types;
-            for (Tab* tab : tabs_list)
-                if (tab->supports_printer_technology(printer_technology) && tab->current_preset_is_dirty())
-                {
-                    const Preset& preset = tab->get_presets()->get_edited_preset();
-                    if (preset.is_system || preset.is_default || preset.is_external)
-                        types.emplace_back(preset.type);
-
-                    names_and_types.emplace_back(NameType{ preset.name, preset.type });
-                }
-
-
-            if (!types.empty()) {
-                SavePresetDialog save_dlg(types);
-                if (save_dlg.ShowModal() != wxID_OK)
-                    return false;
-
-                for (NameType& nt : names_and_types) {
-                    const std::string name = save_dlg.get_name(nt.type);
-                    if (!name.empty())
-                        nt.name = name;
-                }
-            }
-
-            for (const NameType& nt : names_and_types)
-                preset_bundle->save_changes_for_preset(nt.name, nt.type, dlg.get_unselected_options(nt.type));
+            for (const std::pair<std::string, Preset::Type>& nt : dlg.get_names_and_types())
+                preset_bundle->save_changes_for_preset(nt.first, nt.second, dlg.get_unselected_options(nt.second));
 
             // if we saved changes to the new presets, we should to 
             // synchronize config.ini with the current selections.

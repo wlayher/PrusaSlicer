@@ -305,11 +305,12 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
         if (!tab_print) return;
 
         if (opt_key == "fill_density") {
-            value = m_og->get_config_value(*config, opt_key);
-            tab_print->set_value(opt_key, value);
+            tab_print->update_dirty();
+            tab_print->reload_config();
             tab_print->update();
         }
-        else{
+        else
+        {
             DynamicPrintConfig new_conf = *config;
             if (opt_key == "brim") {
                 double new_val;
@@ -350,8 +351,6 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
             }
             tab_print->load_config(new_conf);
         }
-
-        tab_print->update_dirty();
     };
 
 
@@ -439,9 +438,9 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
         return sizer;
     };
     line.append_widget(wiping_dialog_btn);
-
     m_og->append_line(line);
 
+    m_og->activate();
 
     // Frequently changed parameters for SLA_technology
     m_og_sla = std::make_shared<ConfigOptionsGroup>(parent, "");
@@ -512,6 +511,8 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
     line.append_widget(empty_widget);
 
     m_og_sla->append_line(line);
+
+    m_og_sla->activate();
 
     m_sizer = new wxBoxSizer(wxVERTICAL);
     m_sizer->Add(m_og->sizer, 0, wxEXPAND);
@@ -980,7 +981,7 @@ void Sidebar::jump_to_option(size_t selected)
     wxGetApp().get_tab(opt.type)->activate_option(boost::nowide::narrow(opt.opt_key), boost::nowide::narrow(opt.category));
 
     // Switch to the Settings NotePad
-    wxGetApp().mainframe->select_tab();
+//    wxGetApp().mainframe->select_tab();
 }
 
 ObjectManipulation* Sidebar::obj_manipul()
@@ -1589,12 +1590,7 @@ struct Plater::priv
     bool is_sidebar_collapsed() const   { return sidebar->is_collapsed(); }
     void collapse_sidebar(bool show)    { sidebar->collapse(show); }
 
-#if ENABLE_SLOPE_RENDERING
-    bool is_view3D_slope_shown() const { return (current_panel == view3D) && view3D->get_canvas3d()->is_slope_shown(); }
-    void show_view3D_slope(bool show) { if (current_panel == view3D) view3D->get_canvas3d()->show_slope(show); }
-
     bool is_view3D_layers_editing_enabled() const { return (current_panel == view3D) && view3D->get_canvas3d()->is_layers_editing_enabled(); }
-#endif // ENABLE_SLOPE_RENDERING
 
     void set_current_canvas_as_dirty();
     GLCanvas3D* get_current_canvas3D();
@@ -3624,6 +3620,7 @@ void Plater::priv::on_action_split_volumes(SimpleEvent&)
 void Plater::priv::on_action_layersediting(SimpleEvent&)
 {
     view3D->enable_layers_editing(!view3D->is_layers_editing_enabled());
+    notification_manager->set_move_from_overlay(view3D->is_layers_editing_enabled());
 }
 
 void Plater::priv::on_object_select(SimpleEvent& evt)
@@ -4696,12 +4693,7 @@ void Plater::show_view3D_labels(bool show) { p->show_view3D_labels(show); }
 bool Plater::is_sidebar_collapsed() const { return p->is_sidebar_collapsed(); }
 void Plater::collapse_sidebar(bool show) { p->collapse_sidebar(show); }
 
-#if ENABLE_SLOPE_RENDERING
-bool Plater::is_view3D_slope_shown() const { return p->is_view3D_slope_shown(); }
-void Plater::show_view3D_slope(bool show) { p->show_view3D_slope(show); }
-
 bool Plater::is_view3D_layers_editing_enabled() const { return p->is_view3D_layers_editing_enabled(); }
-#endif // ENABLE_SLOPE_RENDERING
 
 void Plater::select_all() { p->select_all(); }
 void Plater::deselect_all() { p->deselect_all(); }

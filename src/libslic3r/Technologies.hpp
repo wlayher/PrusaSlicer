@@ -39,9 +39,6 @@
 //===================
 #define ENABLE_2_3_0_ALPHA1 1
 
-// Enable rendering of objects colored by facets' slope
-#define ENABLE_SLOPE_RENDERING (1 && ENABLE_2_3_0_ALPHA1)
-
 // Enable rendering of objects using environment map
 #define ENABLE_ENVIRONMENT_MAP (1 && ENABLE_2_3_0_ALPHA1)
 
@@ -59,5 +56,6 @@
 #define ENABLE_GCODE_VIEWER_STATISTICS (0 && ENABLE_GCODE_VIEWER)
 #define ENABLE_GCODE_VIEWER_DATA_CHECKING (0 && ENABLE_GCODE_VIEWER)
 #define ENABLE_GCODE_VIEWER_TASKBAR_ICON (0 && ENABLE_GCODE_VIEWER)
+#define ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES (1 && ENABLE_GCODE_VIEWER)
 
 #endif // _prusaslicer_technologies_h_

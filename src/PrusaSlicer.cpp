@@ -154,6 +154,17 @@ int CLI::run(int argc, char **argv)
 
     // Read input file(s) if any.
 #if ENABLE_GCODE_VIEWER
+#if ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
+    for (const std::string& file : m_input_files) {
+        std::string ext = boost::filesystem::path(file).extension().string();
+        if (boost::filesystem::path(file).extension().string() == ".gcode") {
+            if (boost::filesystem::exists(file)) {
+                start_as_gcodeviewer = true;
+                break;
+            }
+        }
+    }
+#endif // ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
     if (!start_as_gcodeviewer) {
 #endif // ENABLE_GCODE_VIEWER
         for (const std::string& file : m_input_files) {
@@ -578,6 +589,12 @@ int CLI::run(int argc, char **argv)
 //		gui->autosave = m_config.opt_string("autosave");
         GUI::GUI_App::SetInstance(gui);
 #if ENABLE_GCODE_VIEWER
+        gui->m_after_init_loads.set_params(load_configs, m_extra_config, m_input_files, start_as_gcodeviewer);
+#else
+        gui->m_after_init_loads.set_params(load_configs, m_extra_config, m_input_files);
+#endif // ENABLE_GCODE_VIEWER
+/*
+#if ENABLE_GCODE_VIEWER
         gui->CallAfter([gui, this, &load_configs, start_as_gcodeviewer] {
 #else
         gui->CallAfter([gui, this, &load_configs] {
@@ -614,6 +631,7 @@ int CLI::run(int argc, char **argv)
             }
 #endif // ENABLE_GCODE_VIEWER
         });
+*/
         int result = wxEntry(argc, argv);
         return result;
 #else /* SLIC3R_GUI */

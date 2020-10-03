@@ -89,10 +89,26 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
     // Load the icon either from the exe, or from the ico file.
 #if _WIN32
     {
-
+#if ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
+        switch (wxGetApp().get_app_mode())
+        {
+        default:
+        case GUI_App::EAppMode::Editor:
+        {
+            SetIcon(wxIcon(Slic3r::var("PrusaSlicer.ico"), wxBITMAP_TYPE_ICO));
+            break;
+        }
+        case GUI_App::EAppMode::GCodeViewer:
+        {
+            SetIcon(wxIcon(Slic3r::var("PrusaSlicer-gcodeviewer.ico"), wxBITMAP_TYPE_ICO));
+            break;
+        }
+        }
+#else
         TCHAR szExeFileName[MAX_PATH];
         GetModuleFileName(nullptr, szExeFileName, MAX_PATH);
         SetIcon(wxIcon(szExeFileName, wxBITMAP_TYPE_ICO));
+#endif // ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
     }
 #else
 #if ENABLE_GCODE_VIEWER
@@ -345,8 +361,9 @@ void MainFrame::update_layout()
         fromDlg,
         toDlg
     };
-    State update_scaling_state = m_layout == ESettingsLayout::Dlg ? State::fromDlg :
-                                 layout   == ESettingsLayout::Dlg ? State::toDlg   : State::noUpdate;
+    State update_scaling_state = //m_layout == ESettingsLayout::Unknown   ? State::noUpdate   : // don't scale settings dialog from the application start
+                                 m_layout == ESettingsLayout::Dlg       ? State::fromDlg    :
+                                 layout   == ESettingsLayout::Dlg       ? State::toDlg      : State::noUpdate;
 #endif //__WXMSW__
 
     m_layout = layout;
@@ -594,7 +611,7 @@ void MainFrame::init_tabpanel()
             m_last_selected_tab = m_tabpanel->GetSelection();
         }
         else
-            select_tab(0); // select Plater
+            select_tab(size_t(0)); // select Plater
     });
 
     m_plater = new Plater(this, this);
@@ -647,6 +664,22 @@ void MainFrame::add_created_tab(Tab* panel)
 
     if (panel->supports_printer_technology(printer_tech))
         m_tabpanel->AddPage(panel, panel->title());
+}
+
+bool MainFrame::is_active_and_shown_tab(Tab* tab)
+{
+    int page_id = m_tabpanel->FindPage(tab);
+
+    if (m_tabpanel->GetSelection() != page_id)
+        return false;
+
+    if (m_layout == ESettingsLayout::Dlg)
+        return m_settings_dialog.IsShown();
+
+    if (m_layout == ESettingsLayout::New)
+        return m_main_sizer->IsShown(m_tabpanel);
+    
+    return true;
 }
 
 bool MainFrame::can_start_new_project() const
@@ -1052,6 +1085,9 @@ void MainFrame::init_menubar()
         append_menu_item(export_menu, wxID_ANY, _L("Export Config &Bundle") + dots, _L("Export all presets to file"),
             [this](wxCommandEvent&) { export_configbundle(); }, "export_config_bundle", nullptr,
             [this]() {return true; }, this);
+        append_menu_item(export_menu, wxID_ANY, _L("Export Config Bundle With Physical Printers") + dots, _L("Export all presets including physical printers to file"),
+            [this](wxCommandEvent&) { export_configbundle(true); }, "export_config_bundle", nullptr,
+            [this]() {return true; }, this);
         append_submenu(fileMenu, export_menu, wxID_ANY, _L("&Export"), "");
 
 		append_menu_item(fileMenu, wxID_ANY, _L("Ejec&t SD card / Flash drive") + dots + "\tCtrl+T", _L("Eject SD card / Flash drive after the G-code was exported to it."),
@@ -1166,7 +1202,7 @@ void MainFrame::init_menubar()
     {
         if (m_plater) {
             append_menu_item(windowMenu, wxID_HIGHEST + 1, _L("&Plater Tab") + "\tCtrl+1", _L("Show the plater"),
-                [this](wxCommandEvent&) { select_tab(0); }, "plater", nullptr,
+                [this](wxCommandEvent&) { select_tab(size_t(0)); }, "plater", nullptr,
                 [this]() {return true; }, this);
             windowMenu->AppendSeparator();
         }
@@ -1242,20 +1278,9 @@ void MainFrame::init_menubar()
             "", nullptr, [this](){return can_change_view(); }, this);
 #endif // ENABLE_GCODE_VIEWER
         viewMenu->AppendSeparator();
-#if ENABLE_SLOPE_RENDERING
-        wxMenu* options_menu = new wxMenu();
-        append_menu_check_item(options_menu, wxID_ANY, _L("Show &labels") + sep + "E", _L("Show object/instance labels in 3D scene"),
-            [this](wxCommandEvent&) { m_plater->show_view3D_labels(!m_plater->are_view3D_labels_shown()); }, this,
-            [this]() { return m_plater->is_view3D_shown(); }, [this]() { return m_plater->are_view3D_labels_shown(); }, this);
-        append_menu_check_item(options_menu, wxID_ANY, _L("Show &slope") + sep + "D", _L("Objects coloring using faces' slope"),
-            [this](wxCommandEvent&) { m_plater->show_view3D_slope(!m_plater->is_view3D_slope_shown()); }, this,
-            [this]() { return m_plater->is_view3D_shown() && !m_plater->is_view3D_layers_editing_enabled(); }, [this]() { return m_plater->is_view3D_slope_shown(); }, this);
-        append_submenu(viewMenu, options_menu, wxID_ANY, _L("&Options"), "");
-#else
         append_menu_check_item(viewMenu, wxID_ANY, _L("Show &labels") + sep + "E", _L("Show object/instance labels in 3D scene"),
             [this](wxCommandEvent&) { m_plater->show_view3D_labels(!m_plater->are_view3D_labels_shown()); }, this,
             [this]() { return m_plater->is_view3D_shown(); }, [this]() { return m_plater->are_view3D_labels_shown(); }, this);
-#endif // ENABLE_SLOPE_RENDERING
         append_menu_check_item(viewMenu, wxID_ANY, _L("&Collapse sidebar"), _L("Collapse sidebar"),
             [this](wxCommandEvent&) { m_plater->collapse_sidebar(!m_plater->is_sidebar_collapsed()); }, this,
             [this]() { return true; }, [this]() { return m_plater->is_sidebar_collapsed(); }, this);
@@ -1622,7 +1647,7 @@ bool MainFrame::load_config_file(const std::string &path)
     return true;
 }
 
-void MainFrame::export_configbundle()
+void MainFrame::export_configbundle(bool export_physical_printers /*= false*/)
 {
     if (!wxGetApp().check_unsaved_changes())
         return;
@@ -1644,7 +1669,7 @@ void MainFrame::export_configbundle()
         // Export the config bundle.
         wxGetApp().app_config->update_config_dir(get_dir_name(file));
         try {
-            wxGetApp().preset_bundle->export_configbundle(file.ToUTF8().data()); 
+            wxGetApp().preset_bundle->export_configbundle(file.ToUTF8().data(), false, export_physical_printers);
         } catch (const std::exception &ex) {
 			show_error(this, ex.what());
         }
@@ -1722,9 +1747,35 @@ void MainFrame::load_config(const DynamicPrintConfig& config)
 #endif
 }
 
+void MainFrame::select_tab(Tab* tab)
+{
+    if (!tab)
+        return;
+    int page_idx = m_tabpanel->FindPage(tab);
+    if (page_idx != wxNOT_FOUND && m_layout == ESettingsLayout::Dlg)
+        page_idx++;
+    select_tab(size_t(page_idx));
+}
+
 void MainFrame::select_tab(size_t tab/* = size_t(-1)*/)
 {
     bool tabpanel_was_hidden = false;
+
+    // Controls on page are created on active page of active tab now.
+    // We should select/activate tab before its showing to avoid an UI-flickering
+    auto select = [this, tab](bool was_hidden) {
+        // when tab == -1, it means we should show the last selected tab
+        size_t new_selection = tab == (size_t)(-1) ? m_last_selected_tab : (m_layout == ESettingsLayout::Dlg && tab != 0) ? tab - 1 : tab;
+
+        if (m_tabpanel->GetSelection() != new_selection)
+            m_tabpanel->SetSelection(new_selection);
+        else if (was_hidden) {
+            Tab* cur_tab = dynamic_cast<Tab*>(m_tabpanel->GetPage(new_selection));
+            if (cur_tab)
+                cur_tab->OnActivate();
+        }
+    };
+
     if (m_layout == ESettingsLayout::Dlg) {
         if (tab==0) {
             if (m_settings_dialog.IsShown())
@@ -1738,14 +1789,20 @@ void MainFrame::select_tab(size_t tab/* = size_t(-1)*/)
 #ifdef __WXOSX__ // Don't call SetFont under OSX to avoid name cutting in ObjectList
         if (m_settings_dialog.IsShown())
             m_settings_dialog.Hide();
-
+        else
+            tabpanel_was_hidden = true;
+            
+        select(tabpanel_was_hidden);
         m_tabpanel->Show();
         m_settings_dialog.Show();
 #else
-        if (m_settings_dialog.IsShown())
+        if (m_settings_dialog.IsShown()) {
+            select(false);
             m_settings_dialog.SetFocus();
+        }
         else {
             tabpanel_was_hidden = true;
+            select(tabpanel_was_hidden);
             m_tabpanel->Show();
             m_settings_dialog.Show();
         }
@@ -1754,6 +1811,7 @@ void MainFrame::select_tab(size_t tab/* = size_t(-1)*/)
     else if (m_layout == ESettingsLayout::New) {
         m_main_sizer->Show(m_plater, tab == 0);
         tabpanel_was_hidden = !m_main_sizer->IsShown(m_tabpanel);
+        select(tabpanel_was_hidden);
         m_main_sizer->Show(m_tabpanel, tab != 0);
 
         // plater should be focused for correct navigation inside search window
@@ -1761,17 +1819,23 @@ void MainFrame::select_tab(size_t tab/* = size_t(-1)*/)
             m_plater->SetFocus();
         Layout();
     }
+    else
+        select(false);
 
     // When we run application in ESettingsLayout::New or ESettingsLayout::Dlg mode, tabpanel is hidden from the very beginning
     // and as a result Tab::update_changed_tree_ui() function couldn't update m_is_nonsys_values values,
     // which are used for update TreeCtrl and "revert_buttons".
     // So, force the call of this function for Tabs, if tab panel was hidden
     if (tabpanel_was_hidden)
-        for (auto tab : wxGetApp().tabs_list)
-            tab->update_changed_tree_ui();
+        for (auto cur_tab : wxGetApp().tabs_list)
+            cur_tab->update_changed_tree_ui();
 
-    // when tab == -1, it means we should show the last selected tab
-    m_tabpanel->SetSelection(tab == (size_t)(-1) ? m_last_selected_tab : (m_layout == ESettingsLayout::Dlg && tab != 0) ? tab - 1 : tab);
+    //// when tab == -1, it means we should show the last selected tab
+    //size_t new_selection = tab == (size_t)(-1) ? m_last_selected_tab : (m_layout == ESettingsLayout::Dlg && tab != 0) ? tab - 1 : tab;
+    //if (m_tabpanel->GetSelection() != new_selection)
+    //    m_tabpanel->SetSelection(new_selection);
+    //if (tabpanel_was_hidden)
+    //    static_cast<Tab*>(m_tabpanel->GetPage(new_selection))->OnActivate();
 }
 
 // Set a camera direction, zoom to all objects.
@@ -1904,7 +1968,6 @@ SettingsDialog::SettingsDialog(MainFrame* mainframe)
     // Load the icon either from the exe, or from the ico file.
 #if _WIN32
     {
-
         TCHAR szExeFileName[MAX_PATH];
         GetModuleFileName(nullptr, szExeFileName, MAX_PATH);
         SetIcon(wxIcon(szExeFileName, wxBITMAP_TYPE_ICO));
@@ -1918,7 +1981,7 @@ SettingsDialog::SettingsDialog(MainFrame* mainframe)
         auto key_up_handker = [this](wxKeyEvent& evt) {
             if ((evt.GetModifiers() & wxMOD_CONTROL) != 0) {
                 switch (evt.GetKeyCode()) {
-                case '1': { m_main_frame->select_tab(0); break; }
+                case '1': { m_main_frame->select_tab(size_t(0)); break; }
                 case '2': { m_main_frame->select_tab(1); break; }
                 case '3': { m_main_frame->select_tab(2); break; }
                 case '4': { m_main_frame->select_tab(3); break; }
