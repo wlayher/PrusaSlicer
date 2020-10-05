@@ -647,7 +647,6 @@ void PageMaterials::on_mouse_move_on_profiles(wxMouseEvent& evt)
     const wxClientDC dc(list_profile);
     const wxPoint pos = evt.GetLogicalPosition(dc);
     int item = list_profile->HitTest(pos);
-    //BOOST_LOG_TRIVIAL(debug) << "hit test: " << item;
     on_material_hovered(item);
 }
 void PageMaterials::on_mouse_enter_profiles(wxMouseEvent& evt)
@@ -661,7 +660,7 @@ void PageMaterials::reload_presets()
     clear();
 
 	list_printer->append(_(L("(All)")), &EMPTY);
-    list_printer->SetLabelMarkup("<b>bald</b>");
+    //list_printer->SetLabelMarkup("<b>bald</b>");
 	for (const Preset* printer : materials->printers) {
 		list_printer->append(printer->name, &printer->name);
 	}
@@ -680,7 +679,6 @@ void PageMaterials::reload_presets()
 
 void PageMaterials::set_compatible_printers_html_window(const std::vector<std::string>& printer_names, bool all_printers)
 {
-    //Slic3r::GUI::wxGetApp().dark_mode()
     const auto bgr_clr = 
 #if defined(__APPLE__)
         wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
@@ -690,9 +688,10 @@ void PageMaterials::set_compatible_printers_html_window(const std::vector<std::s
     const auto bgr_clr_str = wxString::Format(wxT("#%02X%02X%02X"), bgr_clr.Red(), bgr_clr.Green(), bgr_clr.Blue());
     const auto text_clr = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
     const auto text_clr_str = wxString::Format(wxT("#%02X%02X%02X"), text_clr.Red(), text_clr.Green(), text_clr.Blue());
-    wxString first_line = L"Profiles marked with * are not compatible with all installed printers.";
+    wxString first_line = _(L("Profiles marked with * are not compatible with all installed printers."));
     wxString text;
     if (all_printers) {
+        wxString second_line = _(L("All installed printers are compatible with selected profile."));
         text = wxString::Format(
             "<html>"
             "<style>"
@@ -701,7 +700,7 @@ void PageMaterials::set_compatible_printers_html_window(const std::vector<std::s
             "<body bgcolor= %s>"
             "<font color=%s>"
             "<font size=\"3\">"
-            "%s<br /><br /> All installed printers are compatible with selected profile."
+            "%s<br /><br />%s"
             "</font>"
             "</font>"
             "</body>"
@@ -709,9 +708,10 @@ void PageMaterials::set_compatible_printers_html_window(const std::vector<std::s
             , bgr_clr_str
             , text_clr_str
             , first_line
+            , second_line
             );
     } else {
-        wxString second_line = L"Compatible printers:";
+        wxString second_line = _(L("Compatible printers:"));
         text = wxString::Format(
             "<html>"
             "<style>"
@@ -772,7 +772,7 @@ void PageMaterials::on_material_highlighted(int sel_material)
         return;
     }
     last_hovered_item = sel_material;
-    std::string compatible_printers_label = "Compatible printers:\n";
+    //std::string compatible_printers_label = "Compatible printers:\n";
     std::vector<std::string> tabs;
     tabs.push_back(std::string());
     tabs.push_back(std::string());
@@ -910,6 +910,7 @@ void PageMaterials::update_lists(int sel_printer, int sel_type, int sel_vendor)
 			const std::string& type = list_type->get_data(sel_type);
 			const std::string& vendor = list_vendor->get_data(sel_vendor);
 			// finst printer preset
+            std::vector<std::pair<std::reference_wrapper<const std::string>, bool>> to_list;
 			for (size_t i = 0; i < sel_printers_count; i++) {
 				const std::string& printer_name = list_printer->get_data(sel_printers[i]);
 				const Preset* printer = nullptr;
@@ -920,13 +921,14 @@ void PageMaterials::update_lists(int sel_printer, int sel_type, int sel_vendor)
 					}
 				}
 
-				materials->filter_presets(printer, type, vendor, [this](const Preset* p) {
+				materials->filter_presets(printer, type, vendor, [this, &to_list](const Preset* p) {
 					bool was_checked = false;
 					//size_t printer_counter = materials->get_printer_counter(p);
 					int cur_i = list_profile->find(p->alias);
-					if (cur_i == wxNOT_FOUND)
+					if (cur_i == wxNOT_FOUND) {
 						cur_i = list_profile->append(p->alias + (materials->get_omnipresent(p) ? "" : " *"), &p->alias);
-					else
+                        to_list.emplace_back(p->alias, materials->get_omnipresent(p));
+                    } else
 						was_checked = list_profile->IsChecked(cur_i);
 
 					const std::string& section = materials->appconfig_section();
@@ -944,7 +946,7 @@ void PageMaterials::update_lists(int sel_printer, int sel_type, int sel_vendor)
 						wizard_p()->appconfig_new.set(section, p->name, "1");
 					});
 			}
-            sort_list_data(list_profile);
+            sort_list_data(list_profile, to_list);
 		}
 
 		sel_vendor_prev = sel_vendor;
@@ -1010,35 +1012,33 @@ void PageMaterials::sort_list_data(StringList* list, bool add_All_item, bool mat
         list->append(item, &const_cast<std::string&>(item.get()));
 }     
 
-void PageMaterials::sort_list_data(PresetList* list)
+void PageMaterials::sort_list_data(PresetList* list, const std::vector<std::pair<std::reference_wrapper<const std::string>, bool>>& data)
 {
     // sort data
     // then prusa profiles
     // then the rest
     // in alphabetical order
-    std::vector<std::reference_wrapper<const std::string>> prusa_profiles;
-    std::vector<std::reference_wrapper<const std::string>> other_profiles;
-    for (int i = 0; i < list->size(); ++i) {
-        const std::string& data = list->get_data(i);
-        if (data == EMPTY) // do not sort <all> item
-            continue;
-        if (data.find("Prusa") != std::string::npos)
-            prusa_profiles.push_back(data);
+    std::vector<std::pair<std::reference_wrapper<const std::string>, bool>> prusa_profiles;
+    std::vector<std::pair<std::reference_wrapper<const std::string>, bool>> other_profiles;
+    //for (int i = 0; i < data.size(); ++i) {
+    for (const auto& item : data) {
+        const std::string& name = item.first;
+        if (name.find("Prusa") != std::string::npos)
+            prusa_profiles.emplace_back(item);
         else
-            other_profiles.push_back(data);
+            other_profiles.emplace_back(item);
     }
-    std::sort(prusa_profiles.begin(), prusa_profiles.end(), [](std::reference_wrapper<const std::string> a, std::reference_wrapper<const std::string> b) {
-        return a.get() < b.get();
+    std::sort(prusa_profiles.begin(), prusa_profiles.end(), [](std::pair<std::reference_wrapper<const std::string>, bool> a, std::pair<std::reference_wrapper<const std::string>, bool> b) {
+        return a.first.get() < b.first.get();
         });
-    std::sort(other_profiles.begin(), other_profiles.end(), [](std::reference_wrapper<const std::string> a, std::reference_wrapper<const std::string> b) {
-        return a.get() < b.get();
+    std::sort(other_profiles.begin(), other_profiles.end(), [](std::pair<std::reference_wrapper<const std::string>, bool> a, std::pair<std::reference_wrapper<const std::string>, bool> b) {
+        return a.first.get() < b.first.get();
         });
     list->Clear();
     for (const auto& item : prusa_profiles)
-        list->append(item, &const_cast<std::string&>(item.get()));
+        list->append(std::string(item.first) + (item.second ? "" : " *"), &const_cast<std::string&>(item.first.get()));
     for (const auto& item : other_profiles)
-        list->append(item, &const_cast<std::string&>(item.get()));
-
+        list->append(std::string(item.first) + (item.second ? "" : " *"), &const_cast<std::string&>(item.first.get()));
 }
 
 void PageMaterials::select_material(int i)
