@@ -1670,8 +1670,9 @@ void GLCanvas3D::toggle_model_objects_visibility(bool visible, const ModelObject
                 } else {
                     const GLGizmosManager& gm = get_gizmos_manager();
                     auto gizmo_type = gm.get_current_type();
-                    if (gizmo_type == GLGizmosManager::FdmSupports
-                     || gizmo_type == GLGizmosManager::Seam)
+                    if (    (gizmo_type == GLGizmosManager::FdmSupports
+                          || gizmo_type == GLGizmosManager::Seam)
+                        && ! vol->is_modifier)
                         vol->force_neutral_color = true;
                     else
                         vol->force_native_color = true;
@@ -1945,7 +1946,10 @@ void GLCanvas3D::render()
     }
 
 #if ENABLE_ENVIRONMENT_MAP
-    wxGetApp().plater()->init_environment_texture();
+#if ENABLE_GCODE_VIEWER
+    if (wxGetApp().is_editor())
+#endif // ENABLE_GCODE_VIEWER
+        wxGetApp().plater()->init_environment_texture();
 #endif // ENABLE_ENVIRONMENT_MAP
 
     const Size& cnv_size = get_canvas_size();
@@ -4240,7 +4244,7 @@ void GLCanvas3D::update_ui_from_settings()
 
 #if ENABLE_GCODE_VIEWER
     if (wxGetApp().is_editor())
-        wxGetApp().plater()->get_collapse_toolbar().set_enabled(wxGetApp().app_config->get("show_collapse_button") == "1");
+        wxGetApp().plater()->enable_collapse_toolbar(wxGetApp().app_config->get("show_collapse_button") == "1");
 #else
     bool enable_collapse = wxGetApp().app_config->get("show_collapse_button") == "1";
     wxGetApp().plater()->get_collapse_toolbar().set_enabled(enable_collapse);
@@ -5458,6 +5462,20 @@ void GLCanvas3D::_render_objects() const
         m_volumes.render(GLVolumeCollection::Opaque, m_picking_enabled, wxGetApp().plater()->get_camera().get_view_matrix(), [this](const GLVolume& volume) {
             return (m_render_sla_auxiliaries || volume.composite_id.volume_id >= 0);
             });
+        }
+
+        // In case a painting gizmo is open, it should render the painted triangles
+        // before transparent objects are rendered. Otherwise they would not be
+        // visible when inside modifier meshes etc.
+        {
+            const GLGizmosManager& gm = get_gizmos_manager();
+            GLGizmosManager::EType type = gm.get_current_type();
+            if (type == GLGizmosManager::FdmSupports
+             || type == GLGizmosManager::Seam) {
+                shader->stop_using();
+                gm.render_painter_gizmo();
+                shader->start_using();
+            }
         }
 
         m_volumes.render(GLVolumeCollection::Transparent, false, wxGetApp().plater()->get_camera().get_view_matrix());

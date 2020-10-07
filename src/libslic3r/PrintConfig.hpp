@@ -45,7 +45,7 @@ enum AuthorizationType {
 };
 
 enum InfillPattern : int {
-    ipRectilinear, ipMonotonous, ipGrid, ipTriangles, ipStars, ipCubic, ipLine, ipConcentric, ipHoneycomb, ip3DHoneycomb,
+    ipRectilinear, ipMonotonic, ipGrid, ipTriangles, ipStars, ipCubic, ipLine, ipConcentric, ipHoneycomb, ip3DHoneycomb,
     ipGyroid, ipHilbertCurve, ipArchimedeanChords, ipOctagramSpiral, ipAdaptiveCubic, ipSupportCubic, ipCount,
 };
 
@@ -143,7 +143,7 @@ template<> inline const t_config_enum_values& ConfigOptionEnum<InfillPattern>::g
     static t_config_enum_values keys_map;
     if (keys_map.empty()) {
         keys_map["rectilinear"]         = ipRectilinear;
-        keys_map["monotonous"]          = ipMonotonous;
+        keys_map["monotonic"]           = ipMonotonic;
         keys_map["grid"]                = ipGrid;
         keys_map["triangles"]           = ipTriangles;
         keys_map["stars"]               = ipStars;
@@ -615,7 +615,7 @@ class MachineEnvelopeConfig : public StaticPrintConfig
     STATIC_PRINT_CONFIG_CACHE(MachineEnvelopeConfig)
 public:
 	// Allowing the machine limits to be completely ignored or used just for time estimator.
-    ConfigOptionEnum<MachineLimitsUsage> machine_limits_type;
+    ConfigOptionEnum<MachineLimitsUsage> machine_limits_usage;
     // M201 X... Y... Z... E... [mm/sec^2]
     ConfigOptionFloats              machine_max_acceleration_x;
     ConfigOptionFloats              machine_max_acceleration_y;
@@ -643,7 +643,7 @@ public:
 protected:
     void initialize(StaticCacheBase &cache, const char *base_ptr)
     {
-    	OPT_PTR(machine_limits_type);
+        OPT_PTR(machine_limits_usage);
         OPT_PTR(machine_max_acceleration_x);
         OPT_PTR(machine_max_acceleration_y);
         OPT_PTR(machine_max_acceleration_z);

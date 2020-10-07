@@ -119,7 +119,7 @@ private:
     wxFont		    m_bold_font;
 	wxFont			m_normal_font;
 
-    int          m_em_unit; // width of a "m"-symbol in pixels for current system font
+    int             m_em_unit; // width of a "m"-symbol in pixels for current system font
                                // Note: for 100% Scale m_em_unit = 10 -> it's a good enough coefficient for a size setting of controls
 
     std::unique_ptr<wxLocale> 	  m_wxLocale;
@@ -247,6 +247,7 @@ public:
     virtual bool OnExceptionInMainLoop() override;
 
 #ifdef __APPLE__
+    void            OSXStoreOpenFiles(const wxArrayString &files) override;
     // wxWidgets override to get an event on open files.
     void            MacOpenFiles(const wxArrayString &fileNames) override;
 #endif /* __APPLE */

@@ -110,13 +110,6 @@ OptionsGroup::OptionsGroup(	wxWindow* _parent, const wxString& title,
                 m_show_modified_btns(is_tab_opt),
                 staticbox(title!=""), extra_column(extra_clmn)
 {
-    /*if (staticbox) {
-        stb = new wxStaticBox(_parent, wxID_ANY, _(title));
-        if (!wxOSX) stb->SetBackgroundStyle(wxBG_STYLE_PAINT);
-        stb->SetFont(wxOSX ? wxGetApp().normal_font() : wxGetApp().bold_font());
-    } else
-        stb = nullptr;
-    sizer = (staticbox ? new wxStaticBoxSizer(stb, wxVERTICAL) : new wxBoxSizer(wxVERTICAL));*/
 }
 
 void OptionsGroup::add_undo_buttons_to_sizer(wxSizer* sizer, const t_field& field)
@@ -414,17 +407,10 @@ bool OptionsGroup::activate(std::function<void()> throw_if_canceled)
 // delete all controls from the option group
 void OptionsGroup::clear()
 {
-	if (!sizer)//(sizer->IsEmpty())
+	if (!sizer)
 		return;
 
-//	m_grid_sizer->Clear(true);
 	m_grid_sizer = nullptr;
-
-//	sizer->Clear(true);
-	//if (stb) {
-	//	stb->SetContainingSizer(NULL);
-	//	stb->Destroy();
-	//}
 	sizer = nullptr;
 
 	for (Line& line : m_lines)
@@ -592,7 +578,7 @@ bool ConfigOptionsGroup::is_visible(ConfigOptionMode mode)
     if (m_options_mode.size() == 1)
         return m_options_mode[0] <= mode;
 
-    int hidden_row_cnt = 0;
+    size_t hidden_row_cnt = 0;
     for (auto opt_mode : m_options_mode)
         if (opt_mode > mode)
             hidden_row_cnt++;

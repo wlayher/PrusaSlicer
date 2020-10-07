@@ -580,12 +580,13 @@ int CLI::run(int argc, char **argv)
         GUI::GUI_App *gui = new GUI::GUI_App();
 #endif // ENABLE_GCODE_VIEWER
 
-		bool gui_single_instance_setting = gui->app_config->get("single_instance") == "1";
-		if (Slic3r::instance_check(argc, argv, gui_single_instance_setting)) {
-			//TODO: do we have delete gui and other stuff?
-			return -1;
-		}
-		
+        if(!start_as_gcodeviewer) { // gcode viewer is currently not performing instance check
+		    bool gui_single_instance_setting = gui->app_config->get("single_instance") == "1";
+		    if (Slic3r::instance_check(argc, argv, gui_single_instance_setting)) {
+			    //TODO: do we have delete gui and other stuff?
+			    return -1;
+		    }
+        }
 //		gui->autosave = m_config.opt_string("autosave");
         GUI::GUI_App::SetInstance(gui);
 #if ENABLE_GCODE_VIEWER
@@ -664,7 +665,7 @@ bool CLI::setup(int argc, char **argv)
 #ifdef __APPLE__
     // The application is packed in the .dmg archive as 'Slic3r.app/Contents/MacOS/Slic3r'
     // The resources are packed to 'Slic3r.app/Contents/Resources'
-    boost::filesystem::path path_resources = path_to_binary.parent_path() / "../Resources";
+    boost::filesystem::path path_resources = boost::filesystem::canonical(path_to_binary).parent_path() / "../Resources";
 #elif defined _WIN32
     // The application is packed in the .zip archive in the root,
     // The resources are packed to 'resources'
@@ -678,7 +679,7 @@ bool CLI::setup(int argc, char **argv)
     // The application is packed in the .tar.bz archive (or in AppImage) as 'bin/slic3r',
     // The resources are packed to 'resources'
     // Path from Slic3r binary to resources:
-    boost::filesystem::path path_resources = path_to_binary.parent_path() / "../resources";
+    boost::filesystem::path path_resources = boost::filesystem::canonical(path_to_binary).parent_path() / "../resources";
 #endif
 
     set_resources_dir(path_resources.string());

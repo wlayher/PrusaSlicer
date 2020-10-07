@@ -79,6 +79,7 @@
 #include "../Utils/FixModelByWin10.hpp"
 #include "../Utils/UndoRedo.hpp"
 #include "../Utils/PresetUpdater.hpp"
+#include "../Utils/Process.hpp"
 #include "RemovableDriveManager.hpp"
 #include "InstanceCheck.hpp"
 #include "NotificationManager.hpp"
@@ -448,7 +449,7 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
     DynamicPrintConfig*	config_sla = &wxGetApp().preset_bundle->sla_prints.get_edited_preset().config;
     m_og_sla->set_config(config_sla);
 
-    m_og_sla->m_on_change = [config_sla, this](t_config_option_key opt_key, boost::any value) {
+    m_og_sla->m_on_change = [config_sla](t_config_option_key opt_key, boost::any value) {
         Tab* tab = wxGetApp().get_tab(Preset::TYPE_SLA_PRINT);
         if (!tab) return;
 
@@ -1330,7 +1331,10 @@ void Sidebar::collapse(bool collapse)
     p->plater->Layout();
 
     // save collapsing state to the AppConfig
-    wxGetApp().app_config->set("collapsed_sidebar", collapse ? "1" : "0");
+#if ENABLE_GCODE_VIEWER
+    if (wxGetApp().is_editor())
+#endif // ENABLE_GCODE_VIEWER
+        wxGetApp().app_config->set("collapsed_sidebar", collapse ? "1" : "0");
 }
 
 
@@ -1376,7 +1380,7 @@ private:
 
 const std::regex PlaterDropTarget::pattern_drop(".*[.](stl|obj|amf|3mf|prusa)", std::regex::icase);
 #if ENABLE_GCODE_VIEWER
-const std::regex PlaterDropTarget::pattern_gcode_drop(".*[.](gcode)", std::regex::icase);
+const std::regex PlaterDropTarget::pattern_gcode_drop(".*[.](gcode|g)", std::regex::icase);
 #endif // ENABLE_GCODE_VIEWER
 
 bool PlaterDropTarget::OnDropFiles(wxCoord x, wxCoord y, const wxArrayString &filenames)
@@ -1415,9 +1419,14 @@ bool PlaterDropTarget::OnDropFiles(wxCoord x, wxCoord y, const wxArrayString &fi
         fs::path path(into_path(filename));
         if (std::regex_match(path.string(), pattern_drop))
             paths.push_back(std::move(path));
+        else if (std::regex_match(path.string(), pattern_gcode_drop))
+            start_new_gcodeviewer(&filename);
         else
             return false;
     }
+    if (paths.empty())
+        // Likely all paths processed were gcodes, for which a G-code viewer instance has hopefully been started.
+        return false;
 
     wxString snapshot_label;
     assert(! paths.empty());
@@ -1603,9 +1612,8 @@ struct Plater::priv
 #if ENABLE_GCODE_VIEWER
     void update_preview_bottom_toolbar();
     void update_preview_moves_slider();
-#endif // ENABLE_GCODE_VIEWER
+    void enable_preview_moves_slider(bool enable);
 
-#if ENABLE_GCODE_VIEWER
     void reset_gcode_toolpaths();
 #endif // ENABLE_GCODE_VIEWER
 
@@ -2050,8 +2058,14 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
 	wxGetApp().other_instance_message_handler()->init(this->q);
 
     // collapse sidebar according to saved value
-    bool is_collapsed = wxGetApp().app_config->get("collapsed_sidebar") == "1";
-    sidebar->collapse(is_collapsed);
+#if ENABLE_GCODE_VIEWER
+    if (wxGetApp().is_editor()) {
+#endif // ENABLE_GCODE_VIEWER
+        bool is_collapsed = wxGetApp().app_config->get("collapsed_sidebar") == "1";
+        sidebar->collapse(is_collapsed);
+#if ENABLE_GCODE_VIEWER
+    }
+#endif // ENABLE_GCODE_VIEWER
 }
 
 Plater::priv::~priv()
@@ -3982,6 +3996,11 @@ void Plater::priv::reset_canvas_volumes()
 
 bool Plater::priv::init_view_toolbar()
 {
+#if ENABLE_GCODE_VIEWER
+    if (wxGetApp().is_gcode_viewer())
+        return true;
+#endif // ENABLE_GCODE_VIEWER
+
     if (view_toolbar.get_items_count() > 0)
         // already initialized
         return true;
@@ -4020,17 +4039,18 @@ bool Plater::priv::init_view_toolbar()
         return false;
 
     view_toolbar.select_item("3D");
-
-#if ENABLE_GCODE_VIEWER
-    if (wxGetApp().is_editor())
-#endif // ENABLE_GCODE_VIEWER
-        view_toolbar.set_enabled(true);
+    view_toolbar.set_enabled(true);
 
     return true;
 }
 
 bool Plater::priv::init_collapse_toolbar()
 {
+#if ENABLE_GCODE_VIEWER
+    if (wxGetApp().is_gcode_viewer())
+        return true;
+#endif // ENABLE_GCODE_VIEWER
+
     if (collapse_toolbar.get_items_count() > 0)
         // already initialized
         return true;
@@ -4084,9 +4104,12 @@ void Plater::priv::update_preview_moves_slider()
 {
     preview->update_moves_slider();
 }
-#endif // ENABLE_GCODE_VIEWER
 
-#if ENABLE_GCODE_VIEWER
+void Plater::priv::enable_preview_moves_slider(bool enable)
+{
+    preview->enable_moves_slider(enable);
+}
+
 void Plater::priv::reset_gcode_toolpaths()
 {
     preview->get_canvas3d()->reset_gcode_toolpaths();
@@ -5875,6 +5898,11 @@ void Plater::update_preview_bottom_toolbar()
 void Plater::update_preview_moves_slider()
 {
     p->update_preview_moves_slider();
+}
+
+void Plater::enable_preview_moves_slider(bool enable)
+{
+    p->enable_preview_moves_slider(enable);
 }
 
 void Plater::reset_gcode_toolpaths()
