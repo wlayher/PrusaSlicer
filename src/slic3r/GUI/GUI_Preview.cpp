@@ -349,6 +349,7 @@ bool Preview::init(wxWindow* parent, Model* model)
     right_sizer->Add(m_layers_slider_sizer, 1, wxEXPAND, 0);
 
     m_moves_slider = new DoubleSlider::Control(m_bottom_toolbar_panel, wxID_ANY, 0, 0, 0, 100, wxDefaultPosition, wxSize(-1, 3 * GetTextExtent("m").y), wxSL_HORIZONTAL);
+//    m_moves_slider->set_lower_editable(false);
     m_moves_slider->SetDrawMode(DoubleSlider::dmSequentialGCodeView);
 
     wxBoxSizer* bottom_toolbar_sizer = new wxBoxSizer(wxHORIZONTAL);
@@ -1173,8 +1174,11 @@ void Preview::update_moves_slider()
 
 void Preview::enable_moves_slider(bool enable)
 {
-    if (m_moves_slider != nullptr)
-        m_moves_slider->Enable(enable);
+    bool render_as_disabled = !enable;
+    if (m_moves_slider != nullptr && m_moves_slider->is_rendering_as_disabled() != render_as_disabled) {
+        m_moves_slider->set_render_as_disabled(render_as_disabled);
+        m_moves_slider->Refresh();
+    }
 }
 #else
 void Preview::update_double_slider_from_canvas(wxKeyEvent & event)

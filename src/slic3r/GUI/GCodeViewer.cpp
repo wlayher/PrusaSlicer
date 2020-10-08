@@ -1633,10 +1633,10 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
         for (size_t i = 0; i < buffer.paths.size(); ++i) {
             const Path& path = buffer.paths[i];
             if (path.type == EMoveType::Travel) {
-                if (!is_travel_in_z_range(i))
+                if (!is_travel_in_z_range(i, m_layers_z_range[0], m_layers_z_range[1]))
                     continue;
             }
-            else if (!is_in_z_range(path))
+            else if (!is_in_z_range(path, m_layers_z_range[0], m_layers_z_range[1]))
                 continue;
 
             if (path.type == EMoveType::Extrude && !is_visible(path))
@@ -1689,8 +1689,6 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
             break;
     }
 
-    unsigned int render_paths_count = 0;
-
     // second pass: filter paths by sequential data and collect them by color
     for (const auto& [buffer, index_buffer_id, path_id] : paths) {
         const Path& path = buffer->paths[path_id];
@@ -1713,7 +1711,6 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
             it->color = color;
             it->path_id = path_id;
             it->index_buffer_id = index_buffer_id;
-            ++render_paths_count;
         }
 
         unsigned int segments_count = std::min(m_sequential_view.current.last, path.last.s_id) - std::max(m_sequential_view.current.first, path.first.s_id) + 1;
@@ -1736,7 +1733,7 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
         it->offsets.push_back(static_cast<size_t>((path.first.i_id + delta_1st) * sizeof(unsigned int)));
     }
 
-    wxGetApp().plater()->enable_preview_moves_slider(render_paths_count > 0);
+    wxGetApp().plater()->enable_preview_moves_slider(!paths.empty());
 
 #if ENABLE_GCODE_VIEWER_STATISTICS
     for (const TBuffer& buffer : m_buffers) {
@@ -2613,7 +2610,7 @@ void GCodeViewer::render_statistics() const
 }
 #endif // ENABLE_GCODE_VIEWER_STATISTICS
 
-bool GCodeViewer::is_travel_in_z_range(size_t id) const
+bool GCodeViewer::is_travel_in_z_range(size_t id, double min_z, double max_z) const
 {
     const TBuffer& buffer = m_buffers[buffer_id(EMoveType::Travel)];
     if (id >= buffer.paths.size())
@@ -2633,7 +2630,7 @@ bool GCodeViewer::is_travel_in_z_range(size_t id) const
         path.last = buffer.paths[last].last;
     }
 
-    return is_in_z_range(path);
+    return is_in_z_range(path, min_z, max_z);
 }
 
 void GCodeViewer::log_memory_used(const std::string& label, long long additional) const

@@ -228,6 +228,10 @@ public:
     void    SetModeAndOnlyExtruder(const bool is_one_extruder_printed_model, const int only_extruder);
     void    SetExtruderColors(const std::vector<std::string>& extruder_colors);
 
+    void set_lower_editable(bool editable) { m_lower_editable = editable; }
+    void set_render_as_disabled(bool value) { m_render_as_disabled = value; }
+    bool is_rendering_as_disabled() const { return m_render_as_disabled; }
+
     bool is_horizontal() const      { return m_style == wxSL_HORIZONTAL; }
     bool is_one_layer() const       { return m_is_one_layer; }
     bool is_lower_at_min() const    { return m_lower_value == m_min_value; }
@@ -334,6 +338,10 @@ private:
     int         m_max_value;
     int         m_lower_value;
     int         m_higher_value;
+
+    bool        m_lower_editable{ true };
+    bool        m_render_as_disabled{ false };
+
     ScalableBitmap    m_bmp_thumb_higher;
     ScalableBitmap    m_bmp_thumb_lower;
     ScalableBitmap    m_bmp_add_tick_on;
