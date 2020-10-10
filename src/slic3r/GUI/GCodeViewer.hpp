@@ -342,7 +342,7 @@ public:
             Vec3f m_world_position;
             Transform3f m_world_transform;
             float m_z_offset{ 0.5f };
-            std::array<float, 4> m_color{ 1.0f, 1.0f, 1.0f, 1.0f };
+            std::array<float, 4> m_color{ 1.0f, 1.0f, 1.0f, 0.5f };
             bool m_visible{ false };
 
         public:
@@ -365,6 +365,7 @@ public:
             size_t last{ 0 };
         };
 
+        bool skip_invisible_moves{ false };
         Endpoints endpoints;
         Endpoints current;
         Endpoints last_current;
@@ -457,7 +458,7 @@ public:
 private:
     void load_toolpaths(const GCodeProcessor::Result& gcode_result);
     void load_shells(const Print& print, bool initialized);
-    void refresh_render_paths(bool keep_sequential_current_first, bool keep_sequential_current_last) const;
+    void refresh_render_paths(/*bool keep_sequential_current_first,*/ bool keep_sequential_current_last) const;
     void render_toolpaths() const;
     void render_shells() const;
     void render_legend() const;
@@ -468,14 +469,6 @@ private:
         return role < erCount && (m_extrusions.role_visibility_flags & (1 << role)) != 0;
     }
     bool is_visible(const Path& path) const { return is_visible(path.role); }
-    bool is_in_z_range(const Path& path, double min_z, double max_z) const {
-        auto in_z_range = [this, min_z, max_z](double z) {
-            return z > min_z - EPSILON && z < max_z + EPSILON;
-        };
-
-        return in_z_range(path.first.position[2]) || in_z_range(path.last.position[2]);
-    }
-    bool is_travel_in_z_range(size_t id, double min_z, double max_z) const;
     void log_memory_used(const std::string& label, long long additional = 0) const;
 };
 
