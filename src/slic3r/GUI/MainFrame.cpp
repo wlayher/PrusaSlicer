@@ -114,20 +114,16 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
 #if _WIN32
     {
 #if ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
-        switch (wxGetApp().get_app_mode())
-        {
+        wxString src_path;
+        wxFileName::SplitPath(wxStandardPaths::Get().GetExecutablePath(), &src_path, nullptr, nullptr, wxPATH_NATIVE);
+        switch (wxGetApp().get_app_mode()) {
         default:
-        case GUI_App::EAppMode::Editor:
-        {
-            SetIcon(wxIcon(Slic3r::var("PrusaSlicer.ico"), wxBITMAP_TYPE_ICO));
-            break;
+        case GUI_App::EAppMode::Editor:      { src_path += "\\prusa-slicer.exe"; break; }
+        case GUI_App::EAppMode::GCodeViewer: { src_path += "\\prusa-gcodeviewer.exe"; break; }
         }
-        case GUI_App::EAppMode::GCodeViewer:
-        {
-            SetIcon(wxIcon(Slic3r::var("PrusaSlicer-gcodeviewer.ico"), wxBITMAP_TYPE_ICO));
-            break;
-        }
-        }
+        wxIconLocation icon_location;
+        icon_location.SetFileName(src_path);
+        SetIcon(icon_location);
 #else
         TCHAR szExeFileName[MAX_PATH];
         GetModuleFileName(nullptr, szExeFileName, MAX_PATH);
@@ -203,10 +199,7 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
     sizer->Add(m_main_sizer, 1, wxEXPAND);
     SetSizer(sizer);
     // initialize layout from config
-#if ENABLE_GCODE_VIEWER
-    if (wxGetApp().is_editor())
-#endif // ENABLE_GCODE_VIEWER
-        update_layout();
+    update_layout();
     sizer->SetSizeHints(this);
     Fit();
 
@@ -1298,7 +1291,7 @@ void MainFrame::init_menubar()
         append_menu_check_item(viewMenu, wxID_ANY, _L("Show &labels") + sep + "E", _L("Show object/instance labels in 3D scene"),
             [this](wxCommandEvent&) { m_plater->show_view3D_labels(!m_plater->are_view3D_labels_shown()); }, this,
             [this]() { return m_plater->is_view3D_shown(); }, [this]() { return m_plater->are_view3D_labels_shown(); }, this);
-        append_menu_check_item(viewMenu, wxID_ANY, _L("&Collapse sidebar"), _L("Collapse sidebar"),
+        append_menu_check_item(viewMenu, wxID_ANY, _L("&Collapse sidebar") + sep + "Shift+Tab", _L("Collapse sidebar"),
             [this](wxCommandEvent&) { m_plater->collapse_sidebar(!m_plater->is_sidebar_collapsed()); }, this,
             []() { return true; }, [this]() { return m_plater->is_sidebar_collapsed(); }, this);
     }

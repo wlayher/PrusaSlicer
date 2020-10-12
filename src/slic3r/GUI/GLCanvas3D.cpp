@@ -1530,7 +1530,7 @@ bool GLCanvas3D::init()
     if (m_initialized)
         return true;
 
-    if ((m_canvas == nullptr) || (m_context == nullptr))
+    if (m_canvas == nullptr || m_context == nullptr)
         return false;
 
     glsafe(::glClearColor(1.0f, 1.0f, 1.0f, 1.0f));
@@ -1580,8 +1580,7 @@ bool GLCanvas3D::init()
         m_layers_editing.init();
 
 #if ENABLE_GCODE_VIEWER
-    if (!m_main_toolbar.is_enabled())
-    {
+    if (!m_main_toolbar.is_enabled()) {
         if (!m_gcode_viewer.init())
             return false;
     }
@@ -3214,6 +3213,10 @@ void GLCanvas3D::on_key(wxKeyEvent& evt)
                     // Enable switching between 3D and Preview with Tab
                     // m_canvas->HandleAsNavigationKey(evt);   // XXX: Doesn't work in some cases / on Linux
                     post_event(SimpleEvent(EVT_GLCANVAS_TAB));
+                }
+                else if (keyCode == WXK_TAB && evt.ShiftDown()) {
+                    // Collapse side-panel with Shift+Tab
+                    post_event(SimpleEvent(EVT_GLCANVAS_COLLAPSE_SIDEBAR));
                 }
                 else if (keyCode == WXK_SHIFT)
                 {
@@ -5128,7 +5131,7 @@ bool GLCanvas3D::_set_current()
 
 void GLCanvas3D::_resize(unsigned int w, unsigned int h)
 {
-    if ((m_canvas == nullptr) && (m_context == nullptr))
+    if (m_canvas == nullptr && m_context == nullptr)
         return;
 
     auto *imgui = wxGetApp().imgui();
