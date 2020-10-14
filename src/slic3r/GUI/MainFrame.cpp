@@ -68,15 +68,15 @@ class GCodeViewerTaskBarIcon : public wxTaskBarIcon
 {
 public:
     GCodeViewerTaskBarIcon(wxTaskBarIconType iconType = wxTBI_DEFAULT_TYPE) : wxTaskBarIcon(iconType) {}
-#if 0
     wxMenu *CreatePopupMenu() override {
         wxMenu *menu = new wxMenu;
-        int id;
-        auto *item = menu->Append(id = wxNewId(), "&Test menu");
-        menu->Bind(wxEVT_MENU, [this](wxCommandEvent &) { wxMessageBox("Test menu - GCode Viewer"); }, id);
+        //int id;
+        //auto *item = menu->Append(id = wxNewId(), "&Test menu");
+        //menu->Bind(wxEVT_MENU, [this](wxCommandEvent &) { wxMessageBox("Test menu - GCode Viewer"); }, id);
+        append_menu_item(menu, wxID_ANY, _L("Open PrusaSlicer"), _L(""),
+            [this](wxCommandEvent&) { start_new_slicer(nullptr, true); }, "", nullptr);
         return menu;
     }
-#endif
 };
 #endif // __APPLE__
 
@@ -113,7 +113,7 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
     // Load the icon either from the exe, or from the ico file.
 #if _WIN32
     {
-#if ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
+#if ENABLE_GCODE_VIEWER
         wxString src_path;
         wxFileName::SplitPath(wxStandardPaths::Get().GetExecutablePath(), &src_path, nullptr, nullptr, wxPATH_NATIVE);
         switch (wxGetApp().get_app_mode()) {
@@ -128,7 +128,7 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
         TCHAR szExeFileName[MAX_PATH];
         GetModuleFileName(nullptr, szExeFileName, MAX_PATH);
         SetIcon(wxIcon(szExeFileName, wxBITMAP_TYPE_ICO));
-#endif // ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
+#endif // ENABLE_GCODE_VIEWER
     }
 #else
 #if ENABLE_GCODE_VIEWER
@@ -217,65 +217,6 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
     update_title();
 
     // declare events
-    Bind(wxEVT_CREATE, [this](wxWindowCreateEvent& event) {
-
-#ifdef _WIN32
-		//static GUID GUID_DEVINTERFACE_USB_DEVICE	= { 0xA5DCBF10, 0x6530, 0x11D2, 0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED };
-		//static GUID GUID_DEVINTERFACE_DISK 		= { 0x53f56307, 0xb6bf, 0x11d0, 0x94, 0xf2, 0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b };
-		//static GUID GUID_DEVINTERFACE_VOLUME 	    = { 0x71a27cdd, 0x812a, 0x11d0, 0xbe, 0xc7, 0x08, 0x00, 0x2b, 0xe2, 0x09, 0x2f };
-		static GUID GUID_DEVINTERFACE_HID			= { 0x4D1E55B2, 0xF16F, 0x11CF, 0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30 };
-
-    	// Register USB HID (Human Interface Devices) notifications to trigger the 3DConnexion enumeration.
-		DEV_BROADCAST_DEVICEINTERFACE NotificationFilter = { 0 };
-		NotificationFilter.dbcc_size = sizeof(DEV_BROADCAST_DEVICEINTERFACE);
-		NotificationFilter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
-		NotificationFilter.dbcc_classguid = GUID_DEVINTERFACE_HID;
-		m_hDeviceNotify = ::RegisterDeviceNotification(this->GetHWND(), &NotificationFilter, DEVICE_NOTIFY_WINDOW_HANDLE);
-
-// or register for file handle change?
-//		DEV_BROADCAST_HANDLE NotificationFilter = { 0 };
-//		NotificationFilter.dbch_size = sizeof(DEV_BROADCAST_HANDLE);
-//		NotificationFilter.dbch_devicetype = DBT_DEVTYP_HANDLE;
-
-		// Using Win32 Shell API to register for media insert / removal events.
-		LPITEMIDLIST ppidl;
-		if (SHGetSpecialFolderLocation(this->GetHWND(), CSIDL_DESKTOP, &ppidl) == NOERROR) {
-			SHChangeNotifyEntry shCNE;
-			shCNE.pidl       = ppidl;
-			shCNE.fRecursive = TRUE;
-			// Returns a positive integer registration identifier (ID).
-			// Returns zero if out of memory or in response to invalid parameters.
-			m_ulSHChangeNotifyRegister = SHChangeNotifyRegister(this->GetHWND(),		// Hwnd to receive notification
-				SHCNE_DISKEVENTS,														// Event types of interest (sources)
-				SHCNE_MEDIAINSERTED | SHCNE_MEDIAREMOVED,
-				//SHCNE_UPDATEITEM,														// Events of interest - use SHCNE_ALLEVENTS for all events
-				WM_USER_MEDIACHANGED,													// Notification message to be sent upon the event
-				1,																		// Number of entries in the pfsne array
-				&shCNE);																// Array of SHChangeNotifyEntry structures that 
-																						// contain the notifications. This array should 
-																						// always be set to one when calling SHChnageNotifyRegister
-																						// or SHChangeNotifyDeregister will not work properly.
-			assert(m_ulSHChangeNotifyRegister != 0);    // Shell notification failed
-		} else {
-			// Failed to get desktop location
-			assert(false); 
-		}
-
-		{
-			static constexpr int device_count = 1;
-			RAWINPUTDEVICE devices[device_count] = { 0 };
-			// multi-axis mouse (SpaceNavigator, etc.)
-			devices[0].usUsagePage = 0x01;
-			devices[0].usUsage = 0x08;
-			if (! RegisterRawInputDevices(devices, device_count, sizeof(RAWINPUTDEVICE)))
-				BOOST_LOG_TRIVIAL(error) << "RegisterRawInputDevices failed";
-		}
-#endif // _WIN32
-
-        // propagate event
-        event.Skip();
-    });
-
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& event) {
         if (event.CanVeto() && !wxGetApp().check_unsaved_changes()) {
             event.Veto();
@@ -286,6 +227,8 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
         event.Skip();
     });
 
+    //FIXME it seems this method is not called on application start-up, at least not on Windows. Why?
+    // The same applies to wxEVT_CREATE, it is not being called on startup on Windows.
     Bind(wxEVT_ACTIVATE, [this](wxActivateEvent& event) {
         if (m_plater != nullptr && event.GetActive())
             m_plater->on_activate();
@@ -656,6 +599,62 @@ void MainFrame::init_tabpanel()
     }
 }
 
+#ifdef WIN32
+void MainFrame::register_win32_callbacks()
+{
+    //static GUID GUID_DEVINTERFACE_USB_DEVICE  = { 0xA5DCBF10, 0x6530, 0x11D2, 0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED };
+    //static GUID GUID_DEVINTERFACE_DISK        = { 0x53f56307, 0xb6bf, 0x11d0, 0x94, 0xf2, 0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b };
+    //static GUID GUID_DEVINTERFACE_VOLUME      = { 0x71a27cdd, 0x812a, 0x11d0, 0xbe, 0xc7, 0x08, 0x00, 0x2b, 0xe2, 0x09, 0x2f };
+    static GUID GUID_DEVINTERFACE_HID           = { 0x4D1E55B2, 0xF16F, 0x11CF, 0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30 };
+
+    // Register USB HID (Human Interface Devices) notifications to trigger the 3DConnexion enumeration.
+    DEV_BROADCAST_DEVICEINTERFACE NotificationFilter = { 0 };
+    NotificationFilter.dbcc_size = sizeof(DEV_BROADCAST_DEVICEINTERFACE);
+    NotificationFilter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
+    NotificationFilter.dbcc_classguid = GUID_DEVINTERFACE_HID;
+    m_hDeviceNotify = ::RegisterDeviceNotification(this->GetHWND(), &NotificationFilter, DEVICE_NOTIFY_WINDOW_HANDLE);
+
+// or register for file handle change?
+//      DEV_BROADCAST_HANDLE NotificationFilter = { 0 };
+//      NotificationFilter.dbch_size = sizeof(DEV_BROADCAST_HANDLE);
+//      NotificationFilter.dbch_devicetype = DBT_DEVTYP_HANDLE;
+
+    // Using Win32 Shell API to register for media insert / removal events.
+    LPITEMIDLIST ppidl;
+    if (SHGetSpecialFolderLocation(this->GetHWND(), CSIDL_DESKTOP, &ppidl) == NOERROR) {
+        SHChangeNotifyEntry shCNE;
+        shCNE.pidl       = ppidl;
+        shCNE.fRecursive = TRUE;
+        // Returns a positive integer registration identifier (ID).
+        // Returns zero if out of memory or in response to invalid parameters.
+        m_ulSHChangeNotifyRegister = SHChangeNotifyRegister(this->GetHWND(),        // Hwnd to receive notification
+            SHCNE_DISKEVENTS,                                                       // Event types of interest (sources)
+            SHCNE_MEDIAINSERTED | SHCNE_MEDIAREMOVED,
+            //SHCNE_UPDATEITEM,                                                     // Events of interest - use SHCNE_ALLEVENTS for all events
+            WM_USER_MEDIACHANGED,                                                   // Notification message to be sent upon the event
+            1,                                                                      // Number of entries in the pfsne array
+            &shCNE);                                                                // Array of SHChangeNotifyEntry structures that 
+                                                                                    // contain the notifications. This array should 
+                                                                                    // always be set to one when calling SHChnageNotifyRegister
+                                                                                    // or SHChangeNotifyDeregister will not work properly.
+        assert(m_ulSHChangeNotifyRegister != 0);    // Shell notification failed
+    } else {
+        // Failed to get desktop location
+        assert(false); 
+    }
+
+    {
+        static constexpr int device_count = 1;
+        RAWINPUTDEVICE devices[device_count] = { 0 };
+        // multi-axis mouse (SpaceNavigator, etc.)
+        devices[0].usUsagePage = 0x01;
+        devices[0].usUsage = 0x08;
+        if (! RegisterRawInputDevices(devices, device_count, sizeof(RAWINPUTDEVICE)))
+            BOOST_LOG_TRIVIAL(error) << "RegisterRawInputDevices failed";
+    }
+}
+#endif // _WIN32
+
 void MainFrame::create_preset_tabs()
 {
     wxGetApp().update_label_colours_from_appconfig();
@@ -906,7 +905,7 @@ static wxMenu* generate_help_menu()
     wxMenu* helpMenu = new wxMenu();
     append_menu_item(helpMenu, wxID_ANY, _L("Prusa 3D &Drivers"), _L("Open the Prusa3D drivers download page in your browser"),
         [](wxCommandEvent&) { wxGetApp().open_web_page_localized("https://www.prusa3d.com/downloads"); });
-    append_menu_item(helpMenu, wxID_ANY, _(L("Software &Releases")), _(L("Open the software releases page in your browser")),
+    append_menu_item(helpMenu, wxID_ANY, _L("Software &Releases"), _L("Open the software releases page in your browser"),
         [](wxCommandEvent&) { wxLaunchDefaultBrowser("https://github.com/prusa3d/PrusaSlicer/releases"); });
 //#        my $versioncheck = $self->_append_menu_item($helpMenu, "Check for &Updates...", "Check for new Slic3r versions", sub{
 //#            wxTheApp->check_version(1);
@@ -915,15 +914,15 @@ static wxMenu* generate_help_menu()
     append_menu_item(helpMenu, wxID_ANY, wxString::Format(_L("%s &Website"), SLIC3R_APP_NAME),
         wxString::Format(_L("Open the %s website in your browser"), SLIC3R_APP_NAME),
         [](wxCommandEvent&) { wxGetApp().open_web_page_localized("https://www.prusa3d.com/slicerweb"); });
-//        append_menu_item(helpMenu, wxID_ANY, wxString::Format(_(L("%s &Manual")), SLIC3R_APP_NAME),
-//                                             wxString::Format(_(L("Open the %s manual in your browser")), SLIC3R_APP_NAME),
+//        append_menu_item(helpMenu, wxID_ANY, wxString::Format(_L("%s &Manual"), SLIC3R_APP_NAME),
+//                                             wxString::Format(_L("Open the %s manual in your browser"), SLIC3R_APP_NAME),
 //            [this](wxCommandEvent&) { wxLaunchDefaultBrowser("http://manual.slic3r.org/"); });
     helpMenu->AppendSeparator();
     append_menu_item(helpMenu, wxID_ANY, _L("System &Info"), _L("Show system information"),
         [](wxCommandEvent&) { wxGetApp().system_info(); });
     append_menu_item(helpMenu, wxID_ANY, _L("Show &Configuration Folder"), _L("Show user configuration folder (datadir)"),
         [](wxCommandEvent&) { Slic3r::GUI::desktop_open_datadir_folder(); });
-    append_menu_item(helpMenu, wxID_ANY, _(L"Report an I&ssue"), wxString::Format(_L("Report an issue on %s"), SLIC3R_APP_NAME),
+    append_menu_item(helpMenu, wxID_ANY, _L("Report an I&ssue"), wxString::Format(_L("Report an issue on %s"), SLIC3R_APP_NAME),
         [](wxCommandEvent&) { wxLaunchDefaultBrowser("https://github.com/prusa3d/slic3r/issues/new"); });
 #if ENABLE_GCODE_VIEWER
     if (wxGetApp().is_editor())
@@ -1257,8 +1256,9 @@ void MainFrame::init_menubar()
             [this](wxCommandEvent&) { m_printhost_queue_dlg->Show(); }, "upload_queue", nullptr, []() {return true; }, this);
         
         windowMenu->AppendSeparator();
-        append_menu_item(windowMenu, wxID_ANY, _(L("Open new instance")) + "\tCtrl+I", _(L("Open a new PrusaSlicer instance")),
-			[this](wxCommandEvent&) { start_new_slicer(); }, "", nullptr);
+        append_menu_item(windowMenu, wxID_ANY, _L("Open new instance") + "\tCtrl+I", _L("Open a new PrusaSlicer instance"),
+			[this](wxCommandEvent&) { start_new_slicer(); }, "", nullptr, [this]() {return m_plater != nullptr && wxGetApp().app_config->get("single_instance") != "1"; }, this);
+
     }
 
     // View menu
@@ -1291,7 +1291,7 @@ void MainFrame::init_menubar()
         append_menu_check_item(viewMenu, wxID_ANY, _L("Show &labels") + sep + "E", _L("Show object/instance labels in 3D scene"),
             [this](wxCommandEvent&) { m_plater->show_view3D_labels(!m_plater->are_view3D_labels_shown()); }, this,
             [this]() { return m_plater->is_view3D_shown(); }, [this]() { return m_plater->are_view3D_labels_shown(); }, this);
-        append_menu_check_item(viewMenu, wxID_ANY, _L("&Collapse sidebar") + sep + "Shift+Tab", _L("Collapse sidebar"),
+        append_menu_check_item(viewMenu, wxID_ANY, _L("&Collapse sidebar"), _L("Collapse sidebar"),
             [this](wxCommandEvent&) { m_plater->collapse_sidebar(!m_plater->is_sidebar_collapsed()); }, this,
             []() { return true; }, [this]() { return m_plater->is_sidebar_collapsed(); }, this);
     }
@@ -1313,8 +1313,8 @@ void MainFrame::init_menubar()
         append_menu_item(helpMenu, wxID_ANY, wxString::Format(_L("%s &Website"), SLIC3R_APP_NAME), 
                                              wxString::Format(_L("Open the %s website in your browser"), SLIC3R_APP_NAME),
             [this](wxCommandEvent&) { wxGetApp().open_web_page_localized("https://www.prusa3d.com/slicerweb"); });
-//        append_menu_item(helpMenu, wxID_ANY, wxString::Format(_(L("%s &Manual")), SLIC3R_APP_NAME),
-//                                             wxString::Format(_(L("Open the %s manual in your browser")), SLIC3R_APP_NAME),
+//        append_menu_item(helpMenu, wxID_ANY, wxString::Format(_L("%s &Manual"), SLIC3R_APP_NAME),
+//                                             wxString::Format(_L("Open the %s manual in your browser"), SLIC3R_APP_NAME),
 //            [this](wxCommandEvent&) { wxLaunchDefaultBrowser("http://manual.slic3r.org/"); });
         helpMenu->AppendSeparator();
         append_menu_item(helpMenu, wxID_ANY, _L("System &Info"), _L("Show system information"), 
@@ -1323,7 +1323,7 @@ void MainFrame::init_menubar()
             [this](wxCommandEvent&) { Slic3r::GUI::desktop_open_datadir_folder(); });
         append_menu_item(helpMenu, wxID_ANY, _L("Report an I&ssue"), wxString::Format(_L("Report an issue on %s"), SLIC3R_APP_NAME), 
             [this](wxCommandEvent&) { wxLaunchDefaultBrowser("https://github.com/prusa3d/slic3r/issues/new"); });
-        append_menu_item(helpMenu, wxID_ANY, wxString::Format(_(L("&About %s")), SLIC3R_APP_NAME), _(L("Show about dialog")),
+        append_menu_item(helpMenu, wxID_ANY, wxString::Format(_L("&About %s"), SLIC3R_APP_NAME), _L("Show about dialog"),
             [this](wxCommandEvent&) { Slic3r::GUI::about(); });
         helpMenu->AppendSeparator();
         append_menu_item(helpMenu, wxID_ANY, _L("Keyboard Shortcuts") + sep + "&?", _L("Show the list of the keyboard shortcuts"),
@@ -1392,6 +1392,9 @@ void MainFrame::init_menubar_as_gcodeviewer()
         append_menu_item(fileMenu, wxID_ANY, _L("Export &toolpaths as OBJ") + dots, _L("Export toolpaths as OBJ"),
             [this](wxCommandEvent&) { if (m_plater != nullptr) m_plater->export_toolpaths_to_obj(); }, "export_plater", nullptr,
             [this]() {return can_export_toolpaths(); }, this);
+        append_menu_item(fileMenu, wxID_ANY, _L("Open &PrusaSlicer") + dots, _L("Open PrusaSlicer"),
+            [this](wxCommandEvent&) { start_new_slicer(); }, "", nullptr,
+            [this]() {return true; }, this);
         fileMenu->AppendSeparator();
         append_menu_item(fileMenu, wxID_EXIT, _L("&Quit"), wxString::Format(_L("Quit %s"), SLIC3R_APP_NAME),
             [this](wxCommandEvent&) { Close(false); });
@@ -1410,10 +1413,10 @@ void MainFrame::init_menubar_as_gcodeviewer()
     m_menubar = new wxMenuBar();
     m_menubar->Append(fileMenu, _L("&File"));
     if (viewMenu != nullptr) m_menubar->Append(viewMenu, _L("&View"));
-#if ENABLE_GCODE_APP_CONFIG
+#if ENABLE_GCODE_VIEWER
     // Add additional menus from C++
     wxGetApp().add_config_menu(m_menubar);
-#endif // ENABLE_GCODE_APP_CONFIG
+#endif // ENABLE_GCODE_VIEWER
     m_menubar->Append(helpMenu, _L("&Help"));
     SetMenuBar(m_menubar);
 
@@ -1465,7 +1468,7 @@ void MainFrame::quick_slice(const int qs)
 
     // select input file
     if (!(qs & qsReslice)) {
-        wxFileDialog dlg(this, _(L("Choose a file to slice (STL/OBJ/AMF/3MF/PRUSA):")),
+        wxFileDialog dlg(this, _L("Choose a file to slice (STL/OBJ/AMF/3MF/PRUSA):"),
             wxGetApp().app_config->get_last_dir(), "",
             file_wildcards(FT_MODEL), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
         if (dlg.ShowModal() != wxID_OK)
@@ -1476,14 +1479,14 @@ void MainFrame::quick_slice(const int qs)
     }
     else {
         if (m_qs_last_input_file.IsEmpty()) {
-            wxMessageDialog dlg(this, _(L("No previously sliced file.")),
-                _(L("Error")), wxICON_ERROR | wxOK);
+            wxMessageDialog dlg(this, _L("No previously sliced file."),
+                _L("Error"), wxICON_ERROR | wxOK);
             dlg.ShowModal();
             return;
         }
         if (std::ifstream(m_qs_last_input_file.ToUTF8().data())) {
-            wxMessageDialog dlg(this, _(L("Previously sliced file ("))+m_qs_last_input_file+_(L(") not found.")),
-                _(L("File Not Found")), wxICON_ERROR | wxOK);
+            wxMessageDialog dlg(this, _L("Previously sliced file (")+m_qs_last_input_file+_L(") not found."),
+                _L("File Not Found"), wxICON_ERROR | wxOK);
             dlg.ShowModal();
             return;
         }
@@ -1518,7 +1521,7 @@ void MainFrame::quick_slice(const int qs)
     } 
     else if (qs & qsSaveAs) {
         // The following line may die if the output_filename_format template substitution fails.
-        wxFileDialog dlg(this, from_u8((boost::format(_utf8(L("Save %s file as:"))) % ((qs & qsExportSVG) ? _(L("SVG")) : _(L("G-code")))).str()),
+        wxFileDialog dlg(this, from_u8((boost::format(_utf8(L("Save %s file as:"))) % ((qs & qsExportSVG) ? _L("SVG") : _L("G-code"))).str()),
             wxGetApp().app_config->get_last_output_dir(get_dir_name(output_file)), get_base_name(input_file), 
             qs & qsExportSVG ? file_wildcards(FT_SVG) : file_wildcards(FT_GCODE),
             wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
@@ -1530,7 +1533,7 @@ void MainFrame::quick_slice(const int qs)
         wxGetApp().app_config->update_last_output_dir(get_dir_name(output_file));
     } 
     else if (qs & qsExportPNG) {
-        wxFileDialog dlg(this, _(L("Save zip file as:")),
+        wxFileDialog dlg(this, _L("Save zip file as:"),
             wxGetApp().app_config->get_last_output_dir(get_dir_name(output_file)),
             get_base_name(output_file), "*.sl1", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
         if (dlg.ShowModal() != wxID_OK)
@@ -1564,9 +1567,9 @@ void MainFrame::quick_slice(const int qs)
     m_progress_dialog->Destroy();
     m_progress_dialog = nullptr;
 
-    auto message = input_file_basename + _(L(" was successfully sliced."));
+    auto message = input_file_basename + _L(" was successfully sliced.");
 //     wxTheApp->notify(message);
-    wxMessageDialog(this, message, _(L("Slicing Done!")), wxOK | wxICON_INFORMATION).ShowModal();
+    wxMessageDialog(this, message, _L("Slicing Done!"), wxOK | wxICON_INFORMATION).ShowModal();
 //     };
 //     Slic3r::GUI::catch_error(this, []() { if (m_progress_dialog) m_progress_dialog->Destroy(); });
 }
@@ -1581,7 +1584,7 @@ void MainFrame::repair_stl()
 {
     wxString input_file;
     {
-        wxFileDialog dlg(this, _(L("Select the STL file to repair:")),
+        wxFileDialog dlg(this, _L("Select the STL file to repair:"),
             wxGetApp().app_config->get_last_dir(), "",
             file_wildcards(FT_STL), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
         if (dlg.ShowModal() != wxID_OK)
@@ -1617,7 +1620,7 @@ void MainFrame::export_config()
         return;
     }
     // Ask user for the file name for the config file.
-    wxFileDialog dlg(this, _(L("Save configuration as:")),
+    wxFileDialog dlg(this, _L("Save configuration as:"),
         !m_last_config.IsEmpty() ? get_dir_name(m_last_config) : wxGetApp().app_config->get_last_dir(),
         !m_last_config.IsEmpty() ? get_base_name(m_last_config) : "config.ini",
         file_wildcards(FT_INI), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
@@ -1636,7 +1639,7 @@ void MainFrame::load_config_file()
 {
     if (!wxGetApp().check_unsaved_changes())
         return;
-    wxFileDialog dlg(this, _(L("Select configuration to load:")),
+    wxFileDialog dlg(this, _L("Select configuration to load:"),
         !m_last_config.IsEmpty() ? get_dir_name(m_last_config) : wxGetApp().app_config->get_last_dir(),
         "config.ini", "INI files (*.ini, *.gcode)|*.ini;*.INI;*.gcode;*.g", wxFD_OPEN | wxFD_FILE_MUST_EXIST);
 	wxString file;
@@ -1672,7 +1675,7 @@ void MainFrame::export_configbundle(bool export_physical_printers /*= false*/)
         return;
     }
     // Ask user for a file name.
-    wxFileDialog dlg(this, _(L("Save presets bundle as:")),
+    wxFileDialog dlg(this, _L("Save presets bundle as:"),
         !m_last_config.IsEmpty() ? get_dir_name(m_last_config) : wxGetApp().app_config->get_last_dir(),
         SLIC3R_APP_KEY "_config_bundle.ini",
         file_wildcards(FT_INI), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
@@ -1698,7 +1701,7 @@ void MainFrame::load_configbundle(wxString file/* = wxEmptyString, const bool re
     if (!wxGetApp().check_unsaved_changes())
         return;
     if (file.IsEmpty()) {
-        wxFileDialog dlg(this, _(L("Select configuration to load:")),
+        wxFileDialog dlg(this, _L("Select configuration to load:"),
             !m_last_config.IsEmpty() ? get_dir_name(m_last_config) : wxGetApp().app_config->get_last_dir(),
             "config.ini", file_wildcards(FT_INI), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
         if (dlg.ShowModal() != wxID_OK)
@@ -1719,7 +1722,7 @@ void MainFrame::load_configbundle(wxString file/* = wxEmptyString, const bool re
     // Load the currently selected preset into the GUI, update the preset selection box.
 	wxGetApp().load_current_presets();
 
-    const auto message = wxString::Format(_(L("%d presets successfully imported.")), presets_imported);
+    const auto message = wxString::Format(_L("%d presets successfully imported."), presets_imported);
     Slic3r::GUI::show_info(this, message, wxString("Info"));
 }
 

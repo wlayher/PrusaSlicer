@@ -20,7 +20,6 @@ namespace GUI {
 GLGizmoPainterBase::GLGizmoPainterBase(GLCanvas3D& parent, const std::string& icon_filename, unsigned int sprite_id)
     : GLGizmoBase(parent, icon_filename, sprite_id)
 {
-    m_clipping_plane.reset(new ClippingPlane());
     // Make sphere and save it into a vertex buffer.
     const TriangleMesh sphere_mesh = make_sphere(1., (2*M_PI)/24.);
     for (size_t i=0; i<sphere_mesh.its.vertices.size(); ++i)
@@ -127,8 +126,26 @@ void GLGizmoPainterBase::render_triangles(const Selection& selection) const
 
 void GLGizmoPainterBase::render_cursor() const
 {
+    // First check that the mouse pointer is on an object.
+    const ModelObject* mo = m_c->selection_info()->model_object();
+    const Selection& selection = m_parent.get_selection();
+    const ModelInstance* mi = mo->instances[selection.get_instance_idx()];
+    const Camera& camera = wxGetApp().plater()->get_camera();
+
+    // Precalculate transformations of individual meshes.
+    std::vector<Transform3d> trafo_matrices;
+    for (const ModelVolume* mv : mo->volumes) {
+        if (mv->is_model_part())
+            trafo_matrices.emplace_back(mi->get_transformation().get_matrix() * mv->get_matrix());
+    }
+    // Raycast and return if there's no hit.
+    update_raycast_cache(m_parent.get_local_mouse_position(), camera, trafo_matrices);
+    if (m_rr.mesh_id == -1)
+        return;
+
+
     if (m_cursor_type == TriangleSelector::SPHERE)
-        render_cursor_sphere();
+        render_cursor_sphere(trafo_matrices[m_rr.mesh_id]);
     else
         render_cursor_circle();
 }
@@ -181,31 +198,13 @@ void GLGizmoPainterBase::render_cursor_circle() const
 }
 
 
-void GLGizmoPainterBase::render_cursor_sphere() const
+void GLGizmoPainterBase::render_cursor_sphere(const Transform3d& trafo) const
 {
-    Vec2d mouse_position(m_parent.get_local_mouse_position()(0), m_parent.get_local_mouse_position()(1));
-
-    const ModelObject* mo = m_c->selection_info()->model_object();
-    const Selection& selection = m_parent.get_selection();
-    const ModelInstance* mi = mo->instances[selection.get_instance_idx()];
-    const Camera& camera = wxGetApp().plater()->get_camera();
-
-    // Precalculate transformations of individual meshes.
-    std::vector<Transform3d> trafo_matrices;
-    for (const ModelVolume* mv : mo->volumes) {
-        if (mv->is_model_part())
-            trafo_matrices.emplace_back(mi->get_transformation().get_matrix() * mv->get_matrix());
-    }
-    update_raycast_cache(mouse_position, camera, trafo_matrices);
-    if (m_rr.mesh_id == -1)
-        return;
-
-    const Transform3d& complete_matrix = trafo_matrices[m_rr.mesh_id];
-    const Transform3d complete_scaling_matrix_inverse = Geometry::Transformation(complete_matrix).get_matrix(true, true, false, true).inverse();
-    const bool is_left_handed = Geometry::Transformation(complete_matrix).is_left_handed();
+    const Transform3d complete_scaling_matrix_inverse = Geometry::Transformation(trafo).get_matrix(true, true, false, true).inverse();
+    const bool is_left_handed = Geometry::Transformation(trafo).is_left_handed();
 
     glsafe(::glPushMatrix());
-    glsafe(::glMultMatrixd(complete_matrix.data()));
+    glsafe(::glMultMatrixd(trafo.data()));
     // Inverse matrix of the instance scaling is applied so that the mark does not scale with the object.
     glsafe(::glTranslatef(m_rr.hit(0), m_rr.hit(1), m_rr.hit(2)));
     glsafe(::glMultMatrixd(complete_scaling_matrix_inverse.data()));
@@ -332,21 +331,18 @@ bool GLGizmoPainterBase::gizmo_event(SLAGizmoEventType action, const Vec2d& mous
 
             bool dragging_while_painting = (action == SLAGizmoEventType::Dragging && m_button_down != Button::None);
 
-            // The mouse button click detection is enabled when there is a valid hit
-            // or when the user clicks the clipping plane. Missing the object entirely
+            // The mouse button click detection is enabled when there is a valid hit.
+            // Missing the object entirely
             // shall not capture the mouse.
-            if (m_rr.mesh_id != -1 || m_rr.clipped_mesh_was_hit) {
+            if (m_rr.mesh_id != -1) {
                 if (m_button_down == Button::None)
                     m_button_down = ((action == SLAGizmoEventType::LeftDown) ? Button::Left : Button::Right);
             }
 
             if (m_rr.mesh_id == -1) {
-                // In case we have no valid hit, we can return. The event will
-                // be stopped in following two cases:
-                //  1. clicking the clipping plane
-                //  2. dragging while painting (to prevent scene rotations and moving the object)
-                return m_rr.clipped_mesh_was_hit
-                    || dragging_while_painting;
+                // In case we have no valid hit, we can return. The event will be stopped when
+                // dragging while painting (to prevent scene rotations and moving the object)
+                return dragging_while_painting;
             }
 
             const Transform3d& trafo_matrix = trafo_matrices[m_rr.mesh_id];
@@ -411,7 +407,6 @@ void GLGizmoPainterBase::update_raycast_cache(const Vec2d& mouse_position,
         return;
     }
 
-    bool clipped_mesh_was_hit{false};
     Vec3f normal =  Vec3f::Zero();
     Vec3f hit = Vec3f::Zero();
     size_t facet = 0;
@@ -429,14 +424,12 @@ void GLGizmoPainterBase::update_raycast_cache(const Vec2d& mouse_position,
                    camera,
                    hit,
                    normal,
-                   m_clipping_plane.get(),
+                   m_c->object_clipper()->get_clipping_plane(),
                    &facet))
         {
             // In case this hit is clipped, skip it.
-            if (is_mesh_point_clipped(hit.cast<double>(), trafo_matrices[mesh_id])) {
-                clipped_mesh_was_hit = true;
+            if (is_mesh_point_clipped(hit.cast<double>(), trafo_matrices[mesh_id]))
                 continue;
-            }
 
             // Is this hit the closest to the camera so far?
             double hit_squared_distance = (camera.get_position()-trafo_matrices[mesh_id]*hit.cast<double>()).squaredNorm();
@@ -449,7 +442,7 @@ void GLGizmoPainterBase::update_raycast_cache(const Vec2d& mouse_position,
         }
     }
 
-    m_rr = {mouse_position, closest_hit_mesh_id, closest_hit, closest_facet, clipped_mesh_was_hit};
+    m_rr = {mouse_position, closest_hit_mesh_id, closest_hit, closest_facet};
 }
 
 bool GLGizmoPainterBase::on_is_activable() const

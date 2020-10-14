@@ -78,7 +78,7 @@ protected:
     void render_triangles(const Selection& selection) const;
     void render_cursor() const;
     void render_cursor_circle() const;
-    void render_cursor_sphere() const;
+    void render_cursor_sphere(const Transform3d& trafo) const;
     virtual void update_model_object() const = 0;
     virtual void update_from_model_object() = 0;
     void activate_internal_undo_redo_stack(bool activate);
@@ -101,8 +101,6 @@ private:
                               const Camera& camera,
                               const std::vector<Transform3d>& trafo_matrices) const;
 
-    float m_clipping_plane_distance = 0.f;
-    std::unique_ptr<ClippingPlane> m_clipping_plane;
     GLIndexedVertexArray m_vbo_sphere;
 
     bool m_internal_stack_active = false;
@@ -126,7 +124,6 @@ private:
         int mesh_id;
         Vec3f hit;
         size_t facet;
-        bool clipped_mesh_was_hit;
     };
     mutable RaycastResult m_rr;
 

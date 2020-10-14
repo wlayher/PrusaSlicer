@@ -109,9 +109,7 @@ private:
     bool            m_app_conf_exists{ false };
 #if ENABLE_GCODE_VIEWER
     EAppMode        m_app_mode{ EAppMode::Editor };
-#if ENABLE_GCODE_APP_CONFIG
     bool            m_is_recreating_gui{ false };
-#endif // ENABLE_GCODE_APP_CONFIG
 #endif // ENABLE_GCODE_VIEWER
 
     wxColour        m_color_label_modified;
@@ -145,7 +143,7 @@ private:
 	size_t m_instance_hash_int;
 
     // parameters needed for the after OnInit() loads
-    struct AFTER_INIT_LOADS
+    struct AfterInitLoads 
     {
         std::vector<std::string>    m_load_configs;
         DynamicPrintConfig          m_extra_config;
@@ -157,9 +155,11 @@ private:
         void set_params(
             const std::vector<std::string>& load_configs,
             const DynamicPrintConfig&       extra_config,
-            const std::vector<std::string>& input_files,
 #if ENABLE_GCODE_VIEWER
+            const std::vector<std::string>& input_files,
             bool                            start_as_gcodeviewer
+#else
+            const std::vector<std::string>& input_files
 #endif // ENABLE_GCODE_VIEWER
         ) {
             m_load_configs = load_configs;
@@ -188,9 +188,7 @@ public:
     EAppMode get_app_mode() const { return m_app_mode; }
     bool is_editor() const { return m_app_mode == EAppMode::Editor; }
     bool is_gcode_viewer() const { return m_app_mode == EAppMode::GCodeViewer; }
-#if ENABLE_GCODE_APP_CONFIG
     bool is_recreating_gui() const { return m_is_recreating_gui; }
-#endif // ENABLE_GCODE_APP_CONFIG
 #endif // ENABLE_GCODE_VIEWER
 
     static std::string get_gl_info(bool format_as_html, bool extensions);
@@ -274,7 +272,7 @@ public:
     PresetUpdater*  preset_updater{ nullptr };
     MainFrame*      mainframe{ nullptr };
     Plater*         plater_{ nullptr };
-    AFTER_INIT_LOADS m_after_init_loads;
+    AfterInitLoads  after_init_loads;
 
 	PresetUpdater* get_preset_updater() { return preset_updater; }
 

@@ -154,7 +154,6 @@ int CLI::run(int argc, char **argv)
 
     // Read input file(s) if any.
 #if ENABLE_GCODE_VIEWER
-#if ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
     for (const std::string& file : m_input_files) {
         std::string ext = boost::filesystem::path(file).extension().string();
         if (boost::filesystem::path(file).extension().string() == ".gcode") {
@@ -164,7 +163,6 @@ int CLI::run(int argc, char **argv)
             }
         }
     }
-#endif // ENABLE_GCODE_DRAG_AND_DROP_GCODE_FILES
     if (!start_as_gcodeviewer) {
 #endif // ENABLE_GCODE_VIEWER
         for (const std::string& file : m_input_files) {
@@ -580,7 +578,7 @@ int CLI::run(int argc, char **argv)
         GUI::GUI_App *gui = new GUI::GUI_App();
 #endif // ENABLE_GCODE_VIEWER
 
-        if(!start_as_gcodeviewer) { // gcode viewer is currently not performing instance check
+        if(gui->get_app_mode() != GUI::GUI_App::EAppMode::GCodeViewer){ // gcode viewer is currently not performing instance check
 		    bool gui_single_instance_setting = gui->app_config->get("single_instance") == "1";
 		    if (Slic3r::instance_check(argc, argv, gui_single_instance_setting)) {
 			    //TODO: do we have delete gui and other stuff?
@@ -590,9 +588,9 @@ int CLI::run(int argc, char **argv)
 //		gui->autosave = m_config.opt_string("autosave");
         GUI::GUI_App::SetInstance(gui);
 #if ENABLE_GCODE_VIEWER
-        gui->m_after_init_loads.set_params(load_configs, m_extra_config, m_input_files, start_as_gcodeviewer);
+        gui->after_init_loads.set_params(load_configs, m_extra_config, m_input_files, start_as_gcodeviewer);
 #else
-        gui->m_after_init_loads.set_params(load_configs, m_extra_config, m_input_files);
+        gui->after_init_loads.set_params(load_configs, m_extra_config, m_input_files);
 #endif // ENABLE_GCODE_VIEWER
 /*
 #if ENABLE_GCODE_VIEWER
