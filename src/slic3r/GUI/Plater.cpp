@@ -3483,7 +3483,6 @@ void Plater::priv::on_slicing_update(SlicingStatusEvent &evt)
 
 void Plater::priv::on_slicing_completed(wxCommandEvent & evt)
 {
-	//notification_manager->push_notification(NotificationType::SlicingComplete, *q->get_current_canvas3D(), evt.GetInt());
 	notification_manager->push_slicing_complete_notification(*q->get_current_canvas3D(), evt.GetInt(), is_sidebar_collapsed());
 
     switch (this->printer_technology) {
@@ -4723,6 +4722,11 @@ void Plater::load_gcode(const wxString& filename)
     // show results
     p->preview->reload_print(false);
     p->preview->get_canvas3d()->zoom_to_gcode();
+}
+
+void Plater::refresh_print()
+{
+    p->preview->refresh_print();
 }
 #endif // ENABLE_GCODE_VIEWER
 

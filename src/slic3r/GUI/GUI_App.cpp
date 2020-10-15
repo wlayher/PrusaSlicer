@@ -773,7 +773,7 @@ bool GUI_App::on_init_inner()
             app_config->save();
             if (this->plater_ != nullptr) {
                 if (*Semver::parse(SLIC3R_VERSION) < *Semver::parse(into_u8(evt.GetString()))) {
-                    this->plater_->get_notification_manager()->push_notification(NotificationType::NewAppAviable, *(this->plater_->get_current_canvas3D()));
+                    this->plater_->get_notification_manager()->push_notification(NotificationType::NewAppAvailable, *(this->plater_->get_current_canvas3D()));
                 }
             }
             });
@@ -1573,6 +1573,8 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
                 PreferencesDialog dlg(mainframe);
                 dlg.ShowModal();
                 app_layout_changed = dlg.settings_layout_changed();
+                if (dlg.seq_top_layer_only_changed())
+                    this->plater_->refresh_print();
             }
             if (app_layout_changed) {
                 // hide full main_sizer for mainFrame
