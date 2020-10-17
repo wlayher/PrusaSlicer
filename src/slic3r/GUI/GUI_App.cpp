@@ -1075,7 +1075,7 @@ void GUI_App::check_printer_presets()
     if (preset_names.empty())
         return;
 
-    wxString msg_text =  _L("You have next presets with saved options for \"Print Host upload\"") + ":";
+    wxString msg_text =  _L("You have the following presets with saved options for \"Print Host upload\"") + ":";
     for (const std::string& preset_name : preset_names)
         msg_text += "\n    \"" + from_u8(preset_name) + "\",";
     msg_text.RemoveLast();
@@ -1578,8 +1578,10 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
                 PreferencesDialog dlg(mainframe);
                 dlg.ShowModal();
                 app_layout_changed = dlg.settings_layout_changed();
+#if ENABLE_GCODE_VIEWER
                 if (dlg.seq_top_layer_only_changed())
                     this->plater_->refresh_print();
+#endif // ENABLE_GCODE_VIEWER
             }
             if (app_layout_changed) {
                 // hide full main_sizer for mainFrame

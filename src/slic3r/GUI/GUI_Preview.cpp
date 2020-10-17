@@ -541,7 +541,9 @@ void Preview::refresh_print()
         return;
 
     load_print(true);
+#if ENABLE_GCODE_VIEWER
     m_moves_slider->set_lower_editable(get_app_config()->get("seq_top_layer_only") == "0");
+#endif // ENABLE_GCODE_VIEWER
 }
 
 void Preview::msw_rescale()
@@ -848,6 +850,7 @@ wxBoxSizer* Preview::create_layers_slider_sizer()
 
     m_layers_slider->SetDrawMode(wxGetApp().preset_bundle->printers.get_edited_preset().printer_technology() == ptSLA,
         wxGetApp().preset_bundle->prints.get_edited_preset().config.opt_bool("complete_objects"));
+    m_layers_slider->enable_action_icon(wxGetApp().is_editor());
 
     sizer->Add(m_layers_slider, 0, wxEXPAND, 0);
 

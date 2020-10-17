@@ -57,6 +57,9 @@ public:
     wxMenu *CreatePopupMenu() override {
         wxMenu *menu = new wxMenu;
         if(wxGetApp().app_config->get("single_instance") == "1") {
+            // Only allow opening a new PrusaSlicer instance on OSX if "single_instance" is disabled, 
+            // as starting new instances would interfere with the locking mechanism of "single_instance" support.
+            //FIXME Vojtech thinks the condition is wrong.
             append_menu_item(menu, wxID_ANY, _L("Open new instance"), _L("Open a new PrusaSlicer instance"),
             [this](wxCommandEvent&) { start_new_slicer(); }, "", nullptr);
         }
@@ -1139,7 +1142,7 @@ void MainFrame::init_menubar()
             [this](wxCommandEvent&) { start_new_gcodeviewer_open_file(this); }, "", nullptr);
         fileMenu->AppendSeparator();
         append_menu_item(fileMenu, wxID_EXIT, _L("&Quit"), wxString::Format(_L("Quit %s"), SLIC3R_APP_NAME),
-            [this](wxCommandEvent&) { Close(false); });
+            [this](wxCommandEvent&) { Close(false); }, "exit");
     }
 
 #if !ENABLE_GCODE_VIEWER
