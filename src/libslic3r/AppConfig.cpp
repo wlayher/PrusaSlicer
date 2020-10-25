@@ -2,6 +2,7 @@
 #include "libslic3r/Utils.hpp"
 #include "AppConfig.hpp"
 #include "Exception.hpp"
+#include "Thread.hpp"
 
 #include <utility>
 #include <vector>
@@ -77,9 +78,9 @@ void AppConfig::set_defaults()
             set("single_instance", 
 #ifdef __APPLE__
                 "1"
-#else __APPLE__
+#else // __APPLE__
                 "0"
-#endif __APPLE__
+#endif // __APPLE__
                 );
 
         if (get("remember_output_path").empty())
@@ -212,6 +213,12 @@ std::string AppConfig::load()
 
 void AppConfig::save()
 {
+#ifndef __APPLE__
+    // Apple does not implement thread_getname_np() correctly.
+    if (get_current_thread_name() != "slic3r_main")
+        throw CriticalException("Calling AppConfig::save() from a worker thread!");
+#endif
+
     // The config is first written to a file with a PID suffix and then moved
     // to avoid race conditions with multiple instances of Slic3r
     const auto path = config_path();
