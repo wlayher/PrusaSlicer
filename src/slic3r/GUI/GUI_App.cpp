@@ -360,12 +360,14 @@ bool static check_old_linux_datadir(const wxString& app_name) {
 
     namespace fs = boost::filesystem;
 
-    // If running Linux, file layout should be already set to XDG.
-    assert(wxStandardPaths::Get().GetFileLayout() == wxStandardPaths::FileLayout_XDG);
-
     std::string new_path = Slic3r::data_dir();
 
-    if (new_path != (wxStandardPaths::Get().GetUserConfigDir() + "/" + app_name).ToUTF8().data()) {
+    wxString dir;
+    if (! wxGetEnv(wxS("XDG_CONFIG_HOME"), &dir) || dir.empty() )
+        dir = wxFileName::GetHomeDir() + wxS("/.config");
+    std::string default_path = (dir + "/" + app_name).ToUTF8().data();
+
+    if (new_path != default_path) {
         // This happens when the user specifies a custom --datadir.
         // Do not show anything in that case.
         return true;
@@ -378,9 +380,7 @@ bool static check_old_linux_datadir(const wxString& app_name) {
     int file_count = std::distance(fs::directory_iterator(data_dir), fs::directory_iterator());
 
     if (file_count <= 1) { // just cache dir with an instance lock
-        wxStandardPaths::Get().SetFileLayout(wxStandardPaths::FileLayout_Classic);
         std::string old_path = wxStandardPaths::Get().GetUserDataDir().ToUTF8().data();
-        wxStandardPaths::Get().SetFileLayout(wxStandardPaths::FileLayout_XDG);
 
         if (fs::is_directory(old_path)) {
             wxString msg = from_u8((boost::format(_u8L("Starting with %1% 2.3, configuration "
@@ -697,8 +697,10 @@ void GUI_App::init_app_config()
         #else
             // Since version 2.3, config dir on Linux is in ${XDG_CONFIG_HOME}.
             // https://github.com/prusa3d/PrusaSlicer/issues/2911
-            wxStandardPaths::Get().SetFileLayout(wxStandardPaths::FileLayout_XDG);
-            set_data_dir((wxStandardPaths::Get().GetUserConfigDir() + "/" + GetAppName()).ToUTF8().data());
+            wxString dir;
+            if (! wxGetEnv(wxS("XDG_CONFIG_HOME"), &dir) || dir.empty() )
+                dir = wxFileName::GetHomeDir() + wxS("/.config");
+            set_data_dir((dir + "/" + GetAppName()).ToUTF8().data());
         #endif
     }
 
@@ -715,6 +717,7 @@ void GUI_App::init_app_config()
         std::string error = app_config->load();
         if (!error.empty()) {
             // Error while parsing config file. We'll customize the error message and rethrow to be displayed.
+#if ENABLE_GCODE_VIEWER
             if (is_editor()) {
                 throw Slic3r::RuntimeError(
                     _u8L("Error parsing PrusaSlicer config file, it is probably corrupted. "
@@ -722,11 +725,14 @@ void GUI_App::init_app_config()
                     "\n\n" + app_config->config_path() + "\n\n" + error);
             }
             else {
+#endif // ENABLE_GCODE_VIEWER
                 throw Slic3r::RuntimeError(
                     _u8L("Error parsing PrusaGCodeViewer config file, it is probably corrupted. "
                         "Try to manually delete the file to recover from the error.") +
                     "\n\n" + app_config->config_path() + "\n\n" + error);
+#if ENABLE_GCODE_VIEWER
             }
+#endif // ENABLE_GCODE_VIEWER
         }
     }
 }
