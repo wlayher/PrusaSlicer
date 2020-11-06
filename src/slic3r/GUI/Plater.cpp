@@ -910,6 +910,12 @@ void Sidebar::update_mode_sizer() const
     p->mode_sizer->SetMode(m_mode);
 }
 
+void Sidebar::change_top_border_for_mode_sizer(bool increase_border)
+{
+    p->mode_sizer->set_items_flag(increase_border ? wxTOP : 0);
+    p->mode_sizer->set_items_border(increase_border ? int(0.5 * wxGetApp().em_unit()) : 0);
+}
+
 void Sidebar::update_reslice_btn_tooltip() const
 {
     wxString tooltip = wxString("Slice") + " [" + GUI::shortkey_ctrl_prefix() + "R]";
@@ -2323,7 +2329,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 wxMessageDialog msg_dlg(q, format_wxstr(_L(
                     "Some object(s) in file %s looks like saved in inches.\n"
                     "Should I consider them as a saved in inches and convert them?"), from_path(filename)) + "\n",
-                    _L("Saved in inches object detected"), wxICON_WARNING | wxYES | wxNO);
+                    _L("The object appears to be saved in inches"), wxICON_WARNING | wxYES | wxNO);
                 if (msg_dlg.ShowModal() == wxID_YES)
                     convert_from_imperial_units(model);
             }
@@ -4740,7 +4746,7 @@ void Plater::load_gcode(const wxString& filename)
     GCodeProcessor processor;
     processor.enable_producers(true);
     processor.enable_machine_envelope_processing(true);
-    processor.process_file(filename.ToUTF8().data());
+    processor.process_file(filename.ToUTF8().data(), false);
     p->gcode_result = std::move(processor.extract_result());
 
     // show results
