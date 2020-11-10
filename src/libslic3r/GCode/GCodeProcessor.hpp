@@ -266,10 +266,24 @@ namespace Slic3r {
 
         struct Result
         {
+            struct SettingsIds
+            {
+                std::string print;
+                std::vector<std::string> filament;
+                std::string printer;
+
+                void reset()
+                {
+                    print = "";
+                    filament = std::vector<std::string>();
+                    printer = "";
+                }
+            };
             unsigned int id;
             std::vector<MoveVertex> moves;
             Pointfs bed_shape;
-            std::string printer_settings_id;
+            SettingsIds settings_ids;
+            size_t extruders_count;
             std::vector<std::string> extruder_colors;
             PrintEstimatedTimeStatistics time_statistics;
 
@@ -281,6 +295,8 @@ namespace Slic3r {
                 moves = std::vector<MoveVertex>();
                 bed_shape = Pointfs();
                 extruder_colors = std::vector<std::string>();
+                extruders_count = 0;
+                settings_ids.reset();
             }
 #else
             void reset()
@@ -288,6 +304,8 @@ namespace Slic3r {
                 moves = std::vector<MoveVertex>();
                 bed_shape = Pointfs();
                 extruder_colors = std::vector<std::string>();
+                extruders_count = 0;
+                settings_ids.reset();
             }
 #endif // ENABLE_GCODE_VIEWER_STATISTICS
         };

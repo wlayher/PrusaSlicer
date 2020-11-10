@@ -388,6 +388,7 @@ public:
 
 private:
     bool m_initialized{ false };
+    mutable bool m_gl_data_initialized{ false };
     unsigned int m_last_result_id{ 0 };
     size_t m_moves_count{ 0 };
     mutable std::vector<TBuffer> m_buffers{ static_cast<size_t>(EMoveType::Extrude) };
@@ -399,6 +400,7 @@ private:
     std::vector<double> m_layers_zs;
     std::array<double, 2> m_layers_z_range;
     std::vector<ExtrusionRole> m_roles;
+    size_t m_extruders_count;
     std::vector<unsigned char> m_extruder_ids;
     mutable Extrusions m_extrusions;
     mutable SequentialView m_sequential_view;
@@ -411,6 +413,7 @@ private:
     mutable Statistics m_statistics;
 #endif // ENABLE_GCODE_VIEWER_STATISTICS
     mutable std::array<float, 2> m_detected_point_sizes = { 0.0f, 0.0f };
+    GCodeProcessor::Result::SettingsIds m_settings_ids;
 
 public:
     GCodeViewer() = default;
