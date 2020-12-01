@@ -1078,7 +1078,11 @@ wxDEFINE_EVENT(EVT_GLCANVAS_MOUSE_DRAGGING_FINISHED, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_UPDATE_BED_SHAPE, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_TAB, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_RESETGIZMOS, SimpleEvent);
+#if ENABLE_ARROW_KEYS_WITH_SLIDERS
+wxDEFINE_EVENT(EVT_GLCANVAS_MOVE_SLIDERS, wxKeyEvent);
+#else
 wxDEFINE_EVENT(EVT_GLCANVAS_MOVE_LAYERS_SLIDER, wxKeyEvent);
+#endif // ENABLE_ARROW_KEYS_WITH_SLIDERS
 wxDEFINE_EVENT(EVT_GLCANVAS_EDIT_COLOR_CHANGE, wxKeyEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_JUMP_TO, wxKeyEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_UNDO, SimpleEvent);
@@ -2409,10 +2413,15 @@ void GLCanvas3D::on_char(wxKeyEvent& evt)
         post_event(SimpleEvent(EVT_GLCANVAS_ARRANGE));
     };
 
+    auto action_question_mark = [this]() {
+        post_event(SimpleEvent(EVT_GLCANVAS_QUESTION_MARK));
+    };
+
 //#ifdef __APPLE__
 //    ctrlMask |= wxMOD_RAW_CONTROL;
 //#endif /* __APPLE__ */
     if ((evt.GetModifiers() & ctrlMask) != 0) {
+        // CTRL is pressed
         switch (keyCode) {
 #ifdef __APPLE__
         case 'a':
@@ -2500,7 +2509,8 @@ void GLCanvas3D::on_char(wxKeyEvent& evt)
 		default:            evt.Skip();
         }
     }
-    else  if ((evt.GetModifiers() & shiftMask) != 0) {
+    else if ((evt.GetModifiers() & shiftMask) != 0) {
+        // SHIFT is pressed
         switch (keyCode) {
         case '+': { action_plus(evt); break; }
         case 'A':
@@ -2511,6 +2521,7 @@ void GLCanvas3D::on_char(wxKeyEvent& evt)
                 post_event(wxKeyEvent(EVT_GLCANVAS_JUMP_TO, evt));
             break;
         }
+        case '?': { action_question_mark(); break; }
         default:
             evt.Skip();
         }
@@ -2539,7 +2550,7 @@ void GLCanvas3D::on_char(wxKeyEvent& evt)
                     else
                         post_event(Event<int>(EVT_GLCANVAS_INCREASE_INSTANCES, -1)); 
                     break; }
-        case '?': { post_event(SimpleEvent(EVT_GLCANVAS_QUESTION_MARK)); break; }
+        case '?': { action_question_mark(); break; }
         case 'A':
         case 'a': { action_a(); break; }
         case 'B':
@@ -2818,7 +2829,11 @@ void GLCanvas3D::on_key(wxKeyEvent& evt)
                         keyCode == WXK_UP ||
                         keyCode == WXK_DOWN) {
                         if (dynamic_cast<Preview*>(m_canvas->GetParent()) != nullptr)
+#if ENABLE_ARROW_KEYS_WITH_SLIDERS
+                            post_event(wxKeyEvent(EVT_GLCANVAS_MOVE_SLIDERS, evt));
+#else
                             post_event(wxKeyEvent(EVT_GLCANVAS_MOVE_LAYERS_SLIDER, evt));
+#endif // ENABLE_ARROW_KEYS_WITH_SLIDERS
                     }
                 }
             }
@@ -3893,10 +3908,13 @@ bool GLCanvas3D::_render_arrange_menu(float pos_x)
 
     bool settings_changed = false;
 
-    if (imgui->slider_float(_L("Gap size"), &settings.distance, 0.f, 100.f)) {
+    if (ImGui::DragFloat(_L("Gal size").ToUTF8().data(), &settings.distance, .01f, 0.0f, 100.0f, "%5.2f")) {
         m_arrange_settings.distance = settings.distance;
         settings_changed = true;
     }
+
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", _L("Use CTRL+Left mouse button to enter text edit mode.\nUse SHIFT key to increase stepping.").ToUTF8().data());
 
     if (imgui->checkbox(_L("Enable rotations (slow)"), settings.enable_rotation)) {
         m_arrange_settings.enable_rotation = settings.enable_rotation;
