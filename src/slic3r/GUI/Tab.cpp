@@ -1586,7 +1586,7 @@ void TabPrint::build()
     page = add_options_page(L("Output options"), "output+page_white");
         optgroup = page->new_optgroup(L("Sequential printing"));
         optgroup->append_single_option_line("complete_objects", "sequential-printing_124589");
-        line = { L("Extruder clearance (mm)"), "" };
+        line = { L("Extruder clearance"), "" };
         line.append_option(optgroup->get_option("extruder_clearance_radius"));
         line.append_option(optgroup->get_option("extruder_clearance_height"));
         optgroup->append_line(line);
@@ -1847,6 +1847,7 @@ void TabFilament::build()
 
         optgroup->append_single_option_line("bridge_fan_speed", category_path + "fan-settings");
         optgroup->append_single_option_line("disable_fan_first_layers", category_path + "fan-settings");
+        optgroup->append_single_option_line("full_fan_speed_layer", category_path + "fan-settings");
 
         optgroup = page->new_optgroup(L("Cooling thresholds"), 25);
         optgroup->append_single_option_line("fan_below_layer_time", category_path + "cooling-thresholds");
@@ -1999,7 +2000,7 @@ void TabFilament::toggle_options()
         for (auto el : { "max_fan_speed", "fan_below_layer_time", "slowdown_below_layer_time", "min_print_speed" })
             toggle_option(el, cooling);
 
-        for (auto el : { "min_fan_speed", "disable_fan_first_layers" })
+        for (auto el : { "min_fan_speed", "disable_fan_first_layers", "full_fan_speed_layer" })
             toggle_option(el, fan_always_on);
     }
 
@@ -3108,6 +3109,11 @@ void Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
                 m_presets->get_edited_preset().name == PhysicalPrinter::get_preset_name(last_selected_ph_printer_name)) {
                 // If preset selection was canceled and previously was selected physical printer, we should select it back
                 m_preset_bundle->physical_printers.select_printer(last_selected_ph_printer_name);
+            }
+            if (m_preset_bundle->physical_printers.has_selection()) {
+                // If preset selection was canceled and physical printer was selected
+                // we must disable selection marker for the physical printers
+                m_preset_bundle->physical_printers.unselect_printer();
             }
         }
 
