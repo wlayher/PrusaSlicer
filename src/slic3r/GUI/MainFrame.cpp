@@ -545,13 +545,6 @@ void MainFrame::init_tabpanel()
 
     wxGetApp().obj_list()->create_popup_menus();
 
-    // The following event is emited by Tab implementation on config value change.
-    Bind(EVT_TAB_VALUE_CHANGED, &MainFrame::on_value_changed, this); // #ys_FIXME_to_delete
-
-    // The following event is emited by Tab on preset selection,
-    // or when the preset's "modified" status changes.
-    Bind(EVT_TAB_PRESETS_CHANGED, &MainFrame::on_presets_changed, this); // #ys_FIXME_to_delete
-
     if (wxGetApp().is_editor())
         create_preset_tabs();
 
@@ -1018,11 +1011,11 @@ void MainFrame::init_menubar_as_editor()
         append_submenu(fileMenu, import_menu, wxID_ANY, _L("&Import"), "");
 
         wxMenu* export_menu = new wxMenu();
-        wxMenuItem* item_export_gcode = append_menu_item(export_menu, wxID_ANY, _L("Export &G-code") + dots +"\tCtrl+G", _L("Export current plate as G-code"),
+        wxMenuItem* item_export_gcode = append_menu_item(export_menu, wxID_ANY, _L("Export &G-code") + dots + "\tCtrl+G", _L("Export current plate as G-code"),
             [this](wxCommandEvent&) { if (m_plater) m_plater->export_gcode(false); }, "export_gcode", nullptr,
             [this](){return can_export_gcode(); }, this);
         m_changeable_menu_items.push_back(item_export_gcode);
-        wxMenuItem* item_send_gcode = append_menu_item(export_menu, wxID_ANY, _L("S&end G-code") + dots +"\tCtrl+Shift+G", _L("Send to print current plate as G-code"),
+        wxMenuItem* item_send_gcode = append_menu_item(export_menu, wxID_ANY, _L("S&end G-code") + dots + "\tCtrl+Shift+G", _L("Send to print current plate as G-code"),
             [this](wxCommandEvent&) { if (m_plater) m_plater->send_gcode(); }, "export_gcode", nullptr,
             [this](){return can_send_gcode(); }, this);
         m_changeable_menu_items.push_back(item_send_gcode);
@@ -1140,9 +1133,15 @@ void MainFrame::init_menubar_as_editor()
             "paste_menu", nullptr, [this](){return m_plater->can_paste_from_clipboard(); }, this);
         
         editMenu->AppendSeparator();
+#ifdef __APPLE__
+        append_menu_item(editMenu, wxID_ANY, _L("Re&load from disk") + dots + "\tCtrl+Shift+R",
+            _L("Reload the plater from disk"), [this](wxCommandEvent&) { m_plater->reload_all_from_disk(); },
+            "", nullptr, [this]() {return !m_plater->model().objects.empty(); }, this);
+#else
         append_menu_item(editMenu, wxID_ANY, _L("Re&load from disk") + sep + "F5",
             _L("Reload the plater from disk"), [this](wxCommandEvent&) { m_plater->reload_all_from_disk(); },
             "", nullptr, [this]() {return !m_plater->model().objects.empty(); }, this);
+#endif // __APPLE__
 
         editMenu->AppendSeparator();
         append_menu_item(editMenu, wxID_ANY, _L("Searc&h") + "\tCtrl+F",
@@ -1185,9 +1184,8 @@ void MainFrame::init_menubar_as_editor()
             [this](wxCommandEvent&) { m_printhost_queue_dlg->Show(); }, "upload_queue", nullptr, []() {return true; }, this);
         
         windowMenu->AppendSeparator();
-        append_menu_item(windowMenu, wxID_ANY, _L("Open new instance") + "\tCtrl+I", _L("Open a new PrusaSlicer instance"),
+        append_menu_item(windowMenu, wxID_ANY, _L("Open new instance") + "\tCtrl+Shift+I", _L("Open a new PrusaSlicer instance"),
 			[this](wxCommandEvent&) { start_new_slicer(); }, "", nullptr, [this]() {return m_plater != nullptr && wxGetApp().app_config->get("single_instance") != "1"; }, this);
-
     }
 
     // View menu
@@ -1242,9 +1240,15 @@ void MainFrame::init_menubar_as_gcodeviewer()
         append_menu_item(fileMenu, wxID_ANY, _L("&Open G-code") + dots + "\tCtrl+O", _L("Open a G-code file"),
             [this](wxCommandEvent&) { if (m_plater != nullptr) m_plater->load_gcode(); }, "open", nullptr,
             [this]() {return m_plater != nullptr; }, this);
+#ifdef __APPLE__
+        append_menu_item(fileMenu, wxID_ANY, _L("Re&load from disk") + dots + "\tCtrl+Shift+R",
+            _L("Reload the plater from disk"), [this](wxCommandEvent&) { m_plater->reload_gcode_from_disk(); },
+            "", nullptr, [this]() { return !m_plater->get_last_loaded_gcode().empty(); }, this);
+#else
         append_menu_item(fileMenu, wxID_ANY, _L("Re&load from disk") + sep + "F5",
             _L("Reload the plater from disk"), [this](wxCommandEvent&) { m_plater->reload_gcode_from_disk(); },
             "", nullptr, [this]() { return !m_plater->get_last_loaded_gcode().empty(); }, this);
+#endif // __APPLE__
         fileMenu->AppendSeparator();
         append_menu_item(fileMenu, wxID_ANY, _L("Export &toolpaths as OBJ") + dots, _L("Export toolpaths as OBJ"),
             [this](wxCommandEvent&) { if (m_plater != nullptr) m_plater->export_toolpaths_to_obj(); }, "export_plater", nullptr,

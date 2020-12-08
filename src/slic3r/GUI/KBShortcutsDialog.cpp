@@ -118,7 +118,11 @@ void KBShortcutsDialog::fill_shortcuts()
             { ctrl + "Y", L("Redo") },
             { ctrl + "C", L("Copy to clipboard") },
             { ctrl + "V", L("Paste from clipboard") },
+#ifdef __APPLE__
+            { ctrl + "Shift+" + "R", L("Reload plater from disk") },
+#else
             { "F5", L("Reload plater from disk") },
+#endif // __APPLE__
             { ctrl + "F", L("Search") },
             // Window
             { ctrl + "1", L("Select Plater Tab") },
@@ -128,6 +132,7 @@ void KBShortcutsDialog::fill_shortcuts()
             { ctrl + "5", L("Switch to 3D") },
             { ctrl + "6", L("Switch to Preview") },
             { ctrl + "J", L("Print host upload queue") },
+            { ctrl + "Shift+" + "I", L("Open new instance") },
             // View
             { "0-6", L("Camera view") },
             { "E", L("Show/Hide object/instance labels") },
@@ -200,6 +205,18 @@ void KBShortcutsDialog::fill_shortcuts()
         };
 
         m_full_shortcuts.push_back(std::make_pair(_L("Gizmos"), gizmos_shortcuts));
+    }
+    else {
+        Shortcuts commands_shortcuts = {
+            { ctrl + "O", L("Open a G-code file") },
+#ifdef __APPLE__
+            { ctrl + "Shift+" + "R", L("Reload the plater from disk") },
+#else
+            { "F5", L("Reload plater from disk") },
+#endif // __APPLE__
+        };
+
+        m_full_shortcuts.push_back(std::make_pair(_L("Commands"), commands_shortcuts));
     }
 
     Shortcuts preview_shortcuts = {
