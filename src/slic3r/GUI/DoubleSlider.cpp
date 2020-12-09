@@ -24,6 +24,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include "Field.hpp"
 #include "format.hpp"
+#include "NotificationManager.hpp"
 
 namespace Slic3r {
 
@@ -1795,8 +1796,9 @@ void Control::show_add_context_menu()
         append_add_color_change_menu_item(&menu);
     }
 
-    append_menu_item(&menu, wxID_ANY, _L("Add pause print") + " (" + gcode(PausePrint) + ")", "",
-        [this](wxCommandEvent&) { add_code_as_tick(PausePrint); }, "pause_print", &menu);
+    if (!gcode(PausePrint).empty())
+        append_menu_item(&menu, wxID_ANY, _L("Add pause print") + " (" + gcode(PausePrint) + ")", "",
+            [this](wxCommandEvent&) { add_code_as_tick(PausePrint); }, "pause_print", &menu);
 
     if (!gcode(Template).empty())
         append_menu_item(&menu, wxID_ANY, _L("Add custom template") + " (" + gcode(Template) + ")", "",
@@ -2004,6 +2006,9 @@ void Control::add_code_as_tick(Type type, int selected_extruder/* = -1*/)
 
     if ( !check_ticks_changed_event(type) )
         return;
+
+    if (type == ColorChange && gcode(ColorChange).empty())
+        GUI::wxGetApp().plater()->get_notification_manager()->push_notification(GUI::NotificationType::EmptyColorChangeCode);
 
     const int extruder = selected_extruder > 0 ? selected_extruder : std::max<int>(1, m_only_extruder);
     const auto it = m_ticks.ticks.find(TickCode{ tick });

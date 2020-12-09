@@ -65,7 +65,9 @@ enum class NotificationType
 	// Object fully outside the print volume, or extrusion outside the print volume. Slicing is not disabled.
 	PlaterWarning,
 	// Progress bar instead of text.
-	ProgressBar
+	ProgressBar,
+	// Notification, when Color Change G-code is empty and user try to add color change on DoubleSlider.
+	EmptyColorChangeCode
 };
 
 class NotificationManager
@@ -188,11 +190,11 @@ private:
 		enum class EState
 		{
 			Unknown,
-			Static,
-			Countdown,
-			FadingOut,
-			ClosePending,
-			Finished
+			Hidden,
+			FadingOutRender,  // Requesting Render
+			FadingOutStatic,
+			ClosePending,     // Requesting Render
+			Finished,         // Requesting Render
 		};
 #else
 		enum class RenderResult
@@ -234,8 +236,8 @@ private:
         void                   hide(bool h) { m_hidden = h; }
 #if ENABLE_NEW_NOTIFICATIONS_FADE_OUT 
 		void                   update_state();
-		bool				   requires_render() const { return m_fading_out || m_close_pending || m_finished; }
-		bool				   requires_update() const { return m_state != EState::Static; }
+		bool				   requires_render() const { return m_state == EState::FadingOutRender || m_state == EState::ClosePending || m_state == EState::Finished; }
+		bool				   requires_update() const { return m_state != EState::Hidden; }
 		EState                 get_state() const { return m_state; }
 #endif // ENABLE_NEW_NOTIFICATIONS_FADE_OUT 
 
@@ -293,6 +295,7 @@ private:
 		bool             m_fading_out           { false };
 #if ENABLE_NEW_NOTIFICATIONS_FADE_OUT 
 		wxMilliClock_t   m_fading_start         { 0LL };
+		wxMilliClock_t   m_last_render_fading   { 0LL };
 #else
 		// total time left when fading beggins
 		float            m_fading_time{ 0.0f };
@@ -452,6 +455,9 @@ private:
 			if (evnthndlr != nullptr) wxPostEvent(evnthndlr, PresetUpdateAvailableClickedEvent(EVT_PRESET_UPDATE_AVAILABLE_CLICKED)); return true; }},
 		{NotificationType::NewAppAvailable, NotificationLevel::ImportantNotification, 20,  _u8L("New version is available."),  _u8L("See Releases page."), [](wxEvtHandler* evnthndlr){ 
 				wxLaunchDefaultBrowser("https://github.com/prusa3d/PrusaSlicer/releases"); return true; }},
+		{NotificationType::EmptyColorChangeCode, NotificationLevel::RegularNotification, 10,  
+			_u8L("You have just added a G-code for color change, but its value is empty.\n"
+				 "To export the G-code correctly, check the \"Color Change G-code\" in \"Printer Settings > Custom G-code\"") },
 		//{NotificationType::NewAppAvailable, NotificationLevel::ImportantNotification, 20,  _u8L("New vesion of PrusaSlicer is available.",  _u8L("Download page.") },
 		//{NotificationType::LoadingFailed, NotificationLevel::RegularNotification, 20,  _u8L("Loading of model has Failed") },
 		//{NotificationType::DeviceEjected, NotificationLevel::RegularNotification, 10,  _u8L("Removable device has been safely ejected")} // if we want changeble text (like here name of device), we need to do it as CustomNotification
