@@ -9,8 +9,9 @@
 #include <iterator>
 #include <exception>
 #include <cstdlib>
-#include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/format.hpp>
+#include <boost/lexical_cast.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/nowide/convert.hpp>
 
@@ -64,6 +65,7 @@
 #include "NotificationManager.hpp"
 #include "UnsavedChangesDialog.hpp"
 #include "SavePresetDialog.hpp"
+#include "PrintHostDialogs.hpp"
 
 #include "BitmapCache.hpp"
 
@@ -579,6 +581,14 @@ static void generic_exception_handle()
         wxMessageBox(errmsg + "\n\n" + wxString(ex.what()), _L("Fatal error"), wxOK | wxICON_ERROR);
         BOOST_LOG_TRIVIAL(error) << boost::format("std::bad_alloc exception: %1%") % ex.what();
         std::terminate();
+    } catch (const boost::io::bad_format_string& ex) {
+        wxString errmsg = _L("PrusaSlicer has encountered a localization error. "
+                             "Please report to PrusaSlicer team, what language was active and in which scenario "
+                             "this issue happened. Thank you.\n\nThe application will now terminate.");
+        wxMessageBox(errmsg + "\n\n" + wxString(ex.what()), _L("Critical error"), wxOK | wxICON_ERROR);
+        BOOST_LOG_TRIVIAL(error) << boost::format("Uncaught exception: %1%") % ex.what();
+        std::terminate();
+        throw;
     } catch (const std::exception& ex) {
         wxLogError("Internal error: %s", ex.what());
         BOOST_LOG_TRIVIAL(error) << boost::format("Uncaught exception: %1%") % ex.what();
@@ -1696,6 +1706,33 @@ bool GUI_App::check_unsaved_changes(const wxString &header)
     }
 
     return true;
+}
+
+bool GUI_App::check_print_host_queue()
+{
+    wxString dirty;
+    std::vector<std::pair<std::string, std::string>> jobs;
+    // Get ongoing jobs from dialog
+    mainframe->m_printhost_queue_dlg->get_active_jobs(jobs);
+    if (jobs.empty())
+        return true;
+    // Show dialog
+    wxString job_string = wxString();
+    for (const auto& job : jobs) {
+        job_string += (boost::format("   %1% : %2% \n") % job.first % job.second).str();
+    }
+    wxString message;
+    message += _(L("The uploads are still ongoing")) + ":\n\n" + job_string +"\n" + _(L("Stop them and continue anyway?"));
+    wxMessageDialog dialog(mainframe,
+        message,
+        wxString(SLIC3R_APP_NAME) + " - " + _(L("Ongoing uploads")),
+        wxICON_QUESTION | wxYES_NO | wxNO_DEFAULT);
+    if (dialog.ShowModal() == wxID_YES)
+        return true;
+
+    // TODO: If already shown, bring forward
+    mainframe->m_printhost_queue_dlg->Show();
+    return false;
 }
 
 bool GUI_App::checked_tab(Tab* tab)
