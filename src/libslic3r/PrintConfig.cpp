@@ -64,7 +64,7 @@ void PrintConfigDef::init_common_params()
 
     def = this->add("thumbnails", coPoints);
     def->label = L("G-code thumbnails");
-    def->tooltip = L("Picture sizes to be stored into a .gcode and .sl1 files");
+    def->tooltip = L("Picture sizes to be stored into a .gcode and .sl1 files, in the following format: \"XxY, XxY, ...\"");
     def->mode = comExpert;
     def->gui_type = "one_string";
     def->set_default_value(new ConfigOptionPoints());
@@ -185,7 +185,7 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("avoid_crossing_perimeters_max_detour", coFloat);
-    def->label = L("Avoid crossing perimeters - The max detour lenght");
+    def->label = L("Avoid crossing perimeters - Max detour length");
     def->category = L("Layers and Perimeters");
     def->tooltip = L("The maximum detour length for avoid crossing perimeters. "
                      "If the detour is longer than this value, avoid crossing perimeters is not applied for this path.");
