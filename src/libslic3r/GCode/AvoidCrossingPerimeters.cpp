@@ -903,7 +903,7 @@ Polyline AvoidCrossingPerimeters::travel_to(const GCode &gcodegen, const Point &
         travel_intersection_count = 0;
     }
 
-    ConfigOptionFloatOrPercent &opt_max_detour = gcodegen.config().avoid_crossing_perimeters_max_detour;
+    const ConfigOptionFloatOrPercent &opt_max_detour = gcodegen.config().avoid_crossing_perimeters_max_detour;
     if (opt_max_detour.value > 0) {
         double direct_length     = travel.length();
         double detour            = result_pl.length() - direct_length;

@@ -193,7 +193,7 @@ void PrintConfigDef::init_fff_params()
     def->sidetext = L("mm (zero to disable)");
     def->min = 0;
     def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloatOrPercent(0.));
+    def->set_default_value(new ConfigOptionFloatOrPercent(0., false));
 
     def = this->add("bed_temperature", coInts);
     def->label = L("Other layers");
