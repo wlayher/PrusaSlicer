@@ -631,12 +631,12 @@ void GLCanvas3D::WarningTexture::activate(WarningTexture::Warning warning, bool 
     std::string text;
     bool error = false;
     switch (warning) {
-    case ObjectOutside: text = L("An object outside the print area was detected."); break;
-    case ToolpathOutside: text = L("A toolpath outside the print area was detected."); error = true; break;
-    case SlaSupportsOutside: text = L("SLA supports outside the print area were detected."); error = true; break;
-    case SomethingNotShown: text = L("Some objects are not visible."); break;
+    case ObjectOutside: text = _u8L("An object outside the print area was detected."); break;
+    case ToolpathOutside: text = _u8L("A toolpath outside the print area was detected."); error = true; break;
+    case SlaSupportsOutside: text = _u8L("SLA supports outside the print area were detected."); error = true; break;
+    case SomethingNotShown: text = _u8L("Some objects are not visible."); break;
     case ObjectClashed:
-        text = L( "An object outside the print area was detected.\n"
+        text = _u8L( "An object outside the print area was detected.\n"
                   "Resolve the current problem to continue slicing.");
         error = true;
         break;
@@ -5680,7 +5680,7 @@ void GLCanvas3D::_load_print_toolpaths()
     if (!print->is_step_done(psSkirt) || !print->is_step_done(psBrim))
         return;
 
-    if (!print->has_skirt() && (print->config().brim_width.value == 0))
+    if (!print->has_skirt() && !print->has_brim())
         return;
 
     const float color[] = { 0.5f, 1.0f, 0.5f, 1.0f }; // greenish
@@ -5692,7 +5692,7 @@ void GLCanvas3D::_load_print_toolpaths()
         total_layer_count = std::max(total_layer_count, print_object->total_layer_count());
     }
     size_t skirt_height = print->has_infinite_skirt() ? total_layer_count : std::min<size_t>(print->config().skirt_height.value, total_layer_count);
-    if ((skirt_height == 0) && (print->config().brim_width.value > 0))
+    if ((skirt_height == 0) && print->has_brim())
         skirt_height = 1;
 
     // Get first skirt_height layers.
