@@ -676,7 +676,7 @@ namespace Slic3r {
                     // select the geometry associated with the original model object
                     const Geometry* geometry = nullptr;
                     for (const IdToModelObjectMap::value_type& object : m_objects) {
-                        if (static_cast<int>(object.second) == i) {
+                        if (object.second == int(i)) {
                             IdToGeometryMap::const_iterator obj_geometry = m_geometries.find(object.first);
                             if (obj_geometry == m_geometries.end()) {
                                 add_error("Unable to find object geometry");
@@ -1872,10 +1872,6 @@ namespace Slic3r {
                 if (object.instances.size() == 1) {
                     triangle_mesh.transform(object.instances.front()->get_transformation().get_matrix());
                     object.instances.front()->set_transformation(Slic3r::Geometry::Transformation());
-                }
-                else {
-                    std::cout << "non-single instance !!!\n";
-                    int a = 0;
                 }
             }
 #endif // ENABLE_RELOAD_FROM_DISK_FOR_3MF
