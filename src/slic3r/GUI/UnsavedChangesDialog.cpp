@@ -201,9 +201,9 @@ void ModelNode::UpdateIcons()
 {
     // update icons for the colors, if any exists
     if (!m_old_color.IsEmpty())
-        m_old_color_bmp = get_bitmap(m_toggle ? m_old_color : grey);
+        m_old_color_bmp = get_bitmap(m_toggle ? m_old_color : grey.c_str());
     if (!m_new_color.IsEmpty())
-        m_new_color_bmp = get_bitmap(m_toggle ? m_new_color : grey);
+        m_new_color_bmp = get_bitmap(m_toggle ? m_new_color : grey.c_str());
 
     // update main icon, if any exists
     if (m_icon_name.empty())
@@ -1116,7 +1116,7 @@ static wxString get_string_value(std::string opt_key, const DynamicPrintConfig& 
                 out.RemoveLast(1);
                 return out;
             }
-            if (!strings->empty() && opt_idx < (int)strings->values.size())
+            if (!strings->empty() && opt_idx < strings->values.size())
                 return from_u8(strings->get_at(opt_idx));
         }
         break;
@@ -1386,8 +1386,8 @@ static std::string get_selection(PresetComboBox* preset_combo)
     return into_u8(preset_combo->GetString(preset_combo->GetSelection()));
 }
 
-DiffPresetDialog::DiffPresetDialog()
-    : DPIDialog(static_cast<wxWindow*>(wxGetApp().mainframe), wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
+DiffPresetDialog::DiffPresetDialog(MainFrame* mainframe)
+    : DPIDialog(mainframe, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
     m_pr_technology(wxGetApp().preset_bundle->printers.get_edited_preset().printer_technology())
 {    
     wxColour bgr_clr = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);

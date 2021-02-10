@@ -121,7 +121,7 @@ Tab::Tab(wxNotebook* parent, const wxString& title, Preset::Type type) :
 
     m_config_manipulation = get_config_manipulation();
 
-    Bind(wxEVT_SIZE, ([this](wxSizeEvent &evt) {
+    Bind(wxEVT_SIZE, ([](wxSizeEvent &evt) {
         //for (auto page : m_pages)
         //    if (! page.get()->IsShown())
         //        page->layout_valid = false;
@@ -242,7 +242,7 @@ void Tab::create_preset_tab()
         if (dlg.ShowModal() == wxID_OK)
             wxGetApp().update_label_colours();
     });
-    m_search_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent) { wxGetApp().plater()->search(false); });
+    m_search_btn->Bind(wxEVT_BUTTON, [](wxCommandEvent) { wxGetApp().plater()->search(false); });
 
     // Colors for ui "decoration"
     m_sys_label_clr			= wxGetApp().get_label_clr_sys();
@@ -491,7 +491,7 @@ void Tab::update_label_colours()
     m_modified_label_clr = wxGetApp().get_label_clr_modified();
 
     //update options "decoration"
-    for (const auto opt : m_options_list)
+    for (const auto& opt : m_options_list)
     {
         const wxColour *color = &m_sys_label_clr;
 
@@ -541,7 +541,7 @@ void Tab::update_label_colours()
 
 void Tab::decorate()
 {
-    for (const auto opt : m_options_list)
+    for (const auto& opt : m_options_list)
     {
         Field*      field = nullptr;
         wxColour*   colored_label_clr = nullptr;
@@ -612,7 +612,7 @@ void Tab::update_changed_ui()
     const bool deep_compare = (m_type == Slic3r::Preset::TYPE_PRINTER || m_type == Slic3r::Preset::TYPE_SLA_MATERIAL);
     auto dirty_options = m_presets->current_dirty_options(deep_compare);
     auto nonsys_options = m_presets->current_different_from_parent_options(deep_compare);
-    if (m_type == Slic3r::Preset::TYPE_PRINTER) {
+    if (m_type == Preset::TYPE_PRINTER && static_cast<TabPrinter*>(this)->m_printer_technology == ptFFF) {
         TabPrinter* tab = static_cast<TabPrinter*>(this);
         if (tab->m_initial_extruders_count != tab->m_extruders_count)
             dirty_options.emplace_back("extruders_count");
@@ -639,7 +639,7 @@ void Tab::init_options_list()
     if (!m_options_list.empty())
         m_options_list.clear();
 
-    for (const auto opt_key : m_config->keys())
+    for (const std::string& opt_key : m_config->keys())
         m_options_list.emplace(opt_key, m_opt_status_value);
 }
 
@@ -656,7 +656,7 @@ void TabPrinter::init_options_list()
     if (!m_options_list.empty())
         m_options_list.clear();
 
-    for (const auto opt_key : m_config->keys())
+    for (const std::string& opt_key : m_config->keys())
     {
         if (opt_key == "bed_shape" || opt_key == "thumbnails") {
             m_options_list.emplace(opt_key, m_opt_status_value);
@@ -673,7 +673,8 @@ void TabPrinter::init_options_list()
         default:		m_options_list.emplace(opt_key, m_opt_status_value);		break;
         }
     }
-    m_options_list.emplace("extruders_count", m_opt_status_value);
+    if (m_printer_technology == ptFFF)
+        m_options_list.emplace("extruders_count", m_opt_status_value);
 }
 
 void TabPrinter::msw_rescale()
@@ -708,7 +709,7 @@ void TabSLAMaterial::init_options_list()
     if (!m_options_list.empty())
         m_options_list.clear();
 
-    for (const auto opt_key : m_config->keys())
+    for (const std::string& opt_key : m_config->keys())
     {
         if (opt_key == "compatible_prints" || opt_key == "compatible_printers") {
             m_options_list.emplace(opt_key, m_opt_status_value);
@@ -1434,16 +1435,12 @@ void TabPrint::build()
         optgroup = page->new_optgroup(L("Advanced"));
         optgroup->append_single_option_line("seam_position", category_path + "seam-position");
         optgroup->append_single_option_line("external_perimeters_first", category_path + "external-perimeters-first");
+        optgroup->append_single_option_line("gap_fill_enabled");
 
         optgroup = page->new_optgroup(L("Fuzzy skin (experimental)"));
-        Option option = optgroup->get_option("fuzzy_skin_perimeter_mode");
+        Option option = optgroup->get_option("fuzzy_skin");
         option.opt.width = 30;
         optgroup->append_single_option_line(option);
-#if 0
-        option = optgroup->get_option("fuzzy_skin_shape");
-        option.opt.width = 30;
-        optgroup->append_single_option_line(option);
-#endif
         optgroup->append_single_option_line(optgroup->get_option("fuzzy_skin_thickness"));
         optgroup->append_single_option_line(optgroup->get_option("fuzzy_skin_point_dist"));
 
@@ -1727,7 +1724,7 @@ void TabFilament::add_filament_overrides_page()
         line.near_label_widget = [this, optgroup, opt_key, opt_index](wxWindow* parent) {
             wxCheckBox* check_box = new wxCheckBox(parent, wxID_ANY, "");
 
-            check_box->Bind(wxEVT_CHECKBOX, [this, optgroup, opt_key, opt_index](wxCommandEvent& evt) {
+            check_box->Bind(wxEVT_CHECKBOX, [optgroup, opt_key, opt_index](wxCommandEvent& evt) {
                 const bool is_checked = evt.IsChecked();
                 Field* field = optgroup->get_fieldc(opt_key, opt_index);
                 if (field != nullptr) {
@@ -2080,6 +2077,8 @@ void TabPrinter::build()
     std::string def_preset_name = "- default " + std::string(m_printer_technology == ptSLA ? "FFF" : "SLA") + " -";
     m_config = &m_presets->find_preset(def_preset_name)->config;
     m_printer_technology == ptSLA ? build_fff() : build_sla();
+    if (m_printer_technology == ptSLA)
+        m_extruders_count_old = 0;// revert this value 
 
     // ... and than for selected printer technology
     load_initial_data();
@@ -2510,7 +2509,7 @@ void TabPrinter::build_unregular_pages(bool from_initial_build/* = false*/)
 
     if (existed_page < n_before_extruders && (is_marlin_flavor || from_initial_build)) {
         auto page = build_kinematics_page();
-        if (from_initial_build)
+        if (from_initial_build && !is_marlin_flavor)
             page->clear();
         else
             m_pages.insert(m_pages.begin() + n_before_extruders, page);
@@ -2662,7 +2661,7 @@ void TabPrinter::build_unregular_pages(bool from_initial_build/* = false*/)
 
     m_extruders_count_old = m_extruders_count;
 
-    if (m_printer_technology == ptSLA/*from_initial_build*/)
+    if (from_initial_build && m_printer_technology == ptSLA)
         return; // next part of code is no needed to execute at this moment
 
     rebuild_page_tree();
@@ -3349,7 +3348,9 @@ bool Tab::tree_sel_change_delayed()
             wxCheckForInterrupt(m_treectrl);
             if (m_page_switch_planned)
                 throw UIBuildCanceled();
-#endif // WIN32
+#else // WIN32
+            (void)this; // silence warning
+#endif
         });
 
     try {
@@ -3921,7 +3922,7 @@ ConfigOptionsGroupShp Page::new_optgroup(const wxString& title, int noncommon_la
 #else
     auto tab = parent()->GetParent();// GetParent();
 #endif
-    optgroup->m_on_change = [this, tab](t_config_option_key opt_key, boost::any value) {
+    optgroup->m_on_change = [tab](t_config_option_key opt_key, boost::any value) {
         //! This function will be called from OptionGroup.
         //! Using of CallAfter is redundant.
         //! And in some cases it causes update() function to be recalled again
@@ -3931,21 +3932,21 @@ ConfigOptionsGroupShp Page::new_optgroup(const wxString& title, int noncommon_la
 //!        });
     };
 
-    optgroup->m_get_initial_config = [this, tab]() {
+    optgroup->m_get_initial_config = [tab]() {
         DynamicPrintConfig config = static_cast<Tab*>(tab)->m_presets->get_selected_preset().config;
         return config;
     };
 
-    optgroup->m_get_sys_config = [this, tab]() {
+    optgroup->m_get_sys_config = [tab]() {
         DynamicPrintConfig config = static_cast<Tab*>(tab)->m_presets->get_selected_preset_parent()->config;
         return config;
     };
 
-    optgroup->have_sys_config = [this, tab]() {
+    optgroup->have_sys_config = [tab]() {
         return static_cast<Tab*>(tab)->m_presets->get_selected_preset_parent() != nullptr;
     };
 
-    optgroup->rescale_extra_column_item = [this](wxWindow* win) {
+    optgroup->rescale_extra_column_item = [](wxWindow* win) {
         auto *ctrl = dynamic_cast<wxStaticBitmap*>(win);
         if (ctrl == nullptr)
             return;
