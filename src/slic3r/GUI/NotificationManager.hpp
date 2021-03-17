@@ -1,6 +1,9 @@
 #ifndef slic3r_GUI_NotificationManager_hpp_
 #define slic3r_GUI_NotificationManager_hpp_
 
+#include "GUI_App.hpp"
+#include "Plater.hpp"
+#include "GLCanvas3D.hpp"
 #include "Event.hpp"
 #include "I18N.hpp"
 
@@ -144,7 +147,7 @@ public:
 	// Exporting finished, show this information with path, button to open containing folder and if ejectable - eject button
 	void push_exporting_finished_notification(const std::string& path, const std::string& dir_path, bool on_removable);
 	// notification with progress bar
-	void push_upload_job_notification(wxEvtHandler* evt_handler, int id, float filesize, const std::string& filename, const std::string& host, float percentage = 0);
+	void push_upload_job_notification(int id, float filesize, const std::string& filename, const std::string& host, float percentage = 0);
 	void set_upload_job_notification_percentage(int id, const std::string& filename, const std::string& host, float percentage);
 	void upload_job_notification_show_canceled(int id, const std::string& filename, const std::string& host);
 	void upload_job_notification_show_error(int id, const std::string& filename, const std::string& host);
@@ -211,9 +214,9 @@ private:
 
 		PopNotification(const NotificationData &n, NotificationIDProvider &id_provider, wxEvtHandler* evt_handler);
 		virtual ~PopNotification() { if (m_id) m_id_provider.release_id(m_id); }
-		void                   render(GLCanvas3D& canvas, float initial_y, bool move_from_overlay, float overlay_width);
+		virtual void           render(GLCanvas3D& canvas, float initial_y, bool move_from_overlay, float overlay_width);
 		// close will dissapear notification on next render
-		virtual void           close() { m_state = EState::ClosePending; }
+		virtual void           close() { m_state = EState::ClosePending; wxGetApp().plater()->get_current_canvas3D()->schedule_extra_frame(0);}
 		// data from newer notification of same type
 		void                   update(const NotificationData& n);
 		bool                   is_finished() const { return m_state == EState::ClosePending || m_state == EState::Finished; }
@@ -226,7 +229,7 @@ private:
 		const bool             is_gray() const { return m_is_gray; }
 		void                   set_gray(bool g) { m_is_gray = g; }
 		bool                   compare_text(const std::string& text);
-        void                   hide(bool h) {  m_state = h ? EState::Hidden : EState::Unknown; }
+        void                   hide(bool h) { if (is_finished()) return; m_state = h ? EState::Hidden : EState::Unknown; }
 		// sets m_next_render with time of next mandatory rendering. Delta is time since last render.
 		bool                   update_state(bool paused, const int64_t delta);
 		int64_t 		       next_render() const { return is_finished() ? 0 : m_next_render; }
@@ -313,10 +316,16 @@ private:
 	{
 	public:
 		SlicingCompleteLargeNotification(const NotificationData& n, NotificationIDProvider& id_provider, wxEvtHandler* evt_handler, bool largeds);
-		void set_large(bool l);
-		bool get_large() { return m_is_large; }
-
-		void set_print_info(const std::string &info);
+		void			set_large(bool l);
+		bool			get_large() { return m_is_large; }
+		void			set_print_info(const std::string &info);
+		virtual void	render(GLCanvas3D& canvas, float initial_y, bool move_from_overlay, float overlay_width) override
+		{
+			// This notification is always hidden if !large (means side bar is collapsed)
+			if (!get_large() && !is_finished()) 
+				m_state = EState::Hidden;
+			PopNotification::render(canvas, initial_y, move_from_overlay, overlay_width);
+		}
 	protected:
 		virtual void render_text(ImGuiWrapper& imgui,
 			                     const float win_size_x, const float win_size_y,
@@ -339,9 +348,9 @@ private:
 	{
 	public:
 		PlaterWarningNotification(const NotificationData& n, NotificationIDProvider& id_provider, wxEvtHandler* evt_handler) : PopNotification(n, id_provider, evt_handler) {}
-		virtual void close()      { m_state = EState::Hidden; }
-		void		 real_close() { m_state = EState::ClosePending; }
-		void         show()       { m_state = EState::Unknown; }
+		virtual void close()  override { if(is_finished()) return; m_state = EState::Hidden; wxGetApp().plater()->get_current_canvas3D()->schedule_extra_frame(0); }
+		void		 real_close()      { m_state = EState::ClosePending; wxGetApp().plater()->get_current_canvas3D()->schedule_extra_frame(0); }
+		void         show()            { m_state = EState::Unknown; }
 	};
 
 	
@@ -356,10 +365,10 @@ private:
 		virtual void count_spaces() override;
 		virtual void render_text(ImGuiWrapper& imgui,
 									const float win_size_x, const float win_size_y,
-									const float win_pos_x, const float win_pos_y);
+									const float win_pos_x, const float win_pos_y) override;
 		virtual void render_bar(ImGuiWrapper& imgui,
 									const float win_size_x, const float win_size_y,
-									const float win_pos_x, const float win_pos_y);
+									const float win_pos_x, const float win_pos_y) ;
 		virtual void render_cancel_button(ImGuiWrapper& imgui,
 									const float win_size_x, const float win_size_y,
 									const float win_pos_x, const float win_pos_y)
@@ -391,16 +400,16 @@ private:
 			m_has_cancel_button = true;
 		}
 		static std::string	get_upload_job_text(int id, const std::string& filename, const std::string& host) { return "[" + std::to_string(id) + "] " + filename + " -> " + host; }
-		virtual void		set_percentage(float percent);
+		virtual void		set_percentage(float percent) override;
 		void				cancel() { m_uj_state = UploadJobState::PB_CANCELLED; m_has_cancel_button = false; }
 		void				error()  { m_uj_state = UploadJobState::PB_ERROR;     m_has_cancel_button = false; }
 	protected:
 		virtual void render_bar(ImGuiWrapper& imgui,
 								const float win_size_x, const float win_size_y,
-								const float win_pos_x, const float win_pos_y);
+								const float win_pos_x, const float win_pos_y) override;
 		virtual void render_cancel_button(ImGuiWrapper& imgui,
 											const float win_size_x, const float win_size_y,
-											const float win_pos_x, const float win_pos_y);
+											const float win_pos_x, const float win_pos_y) override;
 		// Identifies job in cancel callback
 		int					m_job_id;
 		// Size of uploaded size to be displayed in MB

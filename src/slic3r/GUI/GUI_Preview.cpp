@@ -1,3 +1,4 @@
+//#include "stdlib.h"
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Layer.hpp"
 #include "GUI_Preview.hpp"
@@ -642,7 +643,7 @@ void Preview::update_layers_slider(const std::vector<double>& layers_z, bool kee
         m_layers_slider->SetLayersTimes(m_gcode_result->time_statistics.modes.front().layers_times);
 
     // Suggest the auto color change, if model looks like sign
-    if (ticks_info_from_model.gcodes.empty())
+    if (m_layers_slider->IsNewPrint())
     {
         NotificationManager* notif_mngr = wxGetApp().plater()->get_notification_manager();
 //        notif_mngr->close_notification_of_type(NotificationType::SignDetected);
@@ -658,8 +659,8 @@ void Preview::update_layers_slider(const std::vector<double>& layers_z, bool kee
                 continue;
 
             const ExPolygons& bottom = object->get_layer(0)->lslices;
-            if (bottom.size() > 1 || !bottom[0].holes.empty())
-                continue;
+            //if (bottom.size() > 1 || !bottom[0].holes.empty())
+            //    continue;
 
             double bottom_area = area(bottom);
             int i;
@@ -675,8 +676,8 @@ void Preview::update_layers_slider(const std::vector<double>& layers_z, bool kee
                     NotificationType::SignDetected, NotificationManager::NotificationLevel::RegularNotification,
                     _u8L("NOTE:") + "\n" + _u8L("Sliced object looks like the sign") + "\n",
                     _u8L("Apply auto color change to print"),
-                    [this/*, notif_mngr*/](wxEvtHandler*) {
- //                       notif_mngr->close_notification_of_type(NotificationType::SignDetected);
+                    [this, notif_mngr](wxEvtHandler*) {
+                        notif_mngr->close_notification_of_type(NotificationType::SignDetected);
                         m_layers_slider->auto_color_change();
                         return true;
                     });

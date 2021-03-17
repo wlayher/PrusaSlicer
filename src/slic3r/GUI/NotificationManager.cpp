@@ -1,13 +1,11 @@
 #include "NotificationManager.hpp"
 
-#include "GUI_App.hpp"
+
 #include "GUI.hpp"
-#include "Plater.hpp"
-#include "GLCanvas3D.hpp"
 #include "ImGuiWrapper.hpp"
 #include "PrintHostDialogs.hpp"
-
 #include "wxExtensions.hpp"
+#include "../Utils/PrintHost.hpp"
 
 #include <boost/algorithm/string.hpp>
 #include <boost/log/trivial.hpp>
@@ -147,6 +145,12 @@ void NotificationManager::PopNotification::render(GLCanvas3D& canvas, float init
 		return;
 	}
 
+	if (m_state == EState::ClosePending || m_state == EState::Finished)
+	{
+		m_state = EState::Finished;
+		return;
+	}
+
 	Size          cnv_size = canvas.get_canvas_size();
 	ImGuiWrapper& imgui = *wxGetApp().imgui();
 	ImVec2        mouse_pos = ImGui::GetMousePos();
@@ -240,7 +244,11 @@ void NotificationManager::PopNotification::count_spaces()
  
 void NotificationManager::PopNotification::init()
 {
-    std::string text          = m_text1 + " " + m_hypertext;
+	// Do not init closing notification
+	if (is_finished())
+		return;
+    
+	std::string text          = m_text1 + " " + m_hypertext;
     size_t      last_end      = 0;
     m_lines_count = 0;
 
@@ -291,7 +299,9 @@ void NotificationManager::PopNotification::init()
 	}
 	if (m_lines_count == 3)
 		m_multiline = true;
-	m_state = EState::Shown;
+	m_notification_start = GLCanvas3D::timestamp_now();
+	//if (m_state != EState::Hidden)
+	//	m_state = EState::Shown;
 }
 void NotificationManager::PopNotification::set_next_window_size(ImGuiWrapper& imgui)
 { 
@@ -653,6 +663,7 @@ void NotificationManager::SlicingCompleteLargeNotification::set_large(bool l)
 //	m_counting_down = !l;
 	m_hypertext = l ? _u8L("Export G-Code.") : std::string();
 	m_state = l ? EState::Shown : EState::Hidden;
+	init();
 }
 //---------------ExportFinishedNotification-----------
 void NotificationManager::ExportFinishedNotification::count_spaces()
@@ -817,8 +828,6 @@ void NotificationManager::ProgressBarNotification::render_bar(ImGuiWrapper& imgu
 //------PrintHostUploadNotification----------------
 void NotificationManager::PrintHostUploadNotification::set_percentage(float percent)
 {
-	if (m_uj_state == UploadJobState::PB_CANCELLED)
-		return;
 	m_percentage = percent;
 	if (percent >= 1.0f) {
 		m_uj_state = UploadJobState::PB_COMPLETED;
@@ -904,11 +913,7 @@ void NotificationManager::PrintHostUploadNotification::render_cancel_button(ImGu
 	ImGui::SetCursorPosY(win_size.y / 2 - button_size.y);
 	if (imgui.button(button_text.c_str(), button_size.x, button_size.y))
 	{
-		assert(m_evt_handler != nullptr);
-		if (m_evt_handler != nullptr) {
-			auto evt = new PrintHostQueueDialog::Event(GUI::EVT_PRINTHOST_CANCEL, m_job_id, m_job_id);
-			wxQueueEvent(m_evt_handler, evt);
-		}
+		wxGetApp().printhost_job_queue().cancel(m_job_id - 1);
 	}
 
 	//invisible large button
@@ -916,11 +921,7 @@ void NotificationManager::PrintHostUploadNotification::render_cancel_button(ImGu
 	ImGui::SetCursorPosY(0);
 	if (imgui.button("  ", m_line_height * 2.f, win_size.y))
 	{
-		assert(m_evt_handler != nullptr);
-		if (m_evt_handler != nullptr) {
-			auto evt = new PrintHostQueueDialog::Event(GUI::EVT_PRINTHOST_CANCEL, m_job_id, m_job_id);
-			wxQueueEvent(m_evt_handler, evt);
-		}
+		wxGetApp().printhost_job_queue().cancel(m_job_id - 1);
 	}
 	ImGui::PopStyleColor();
 	ImGui::PopStyleColor();
@@ -1119,28 +1120,21 @@ void NotificationManager::push_exporting_finished_notification(const std::string
 	push_notification_data(std::make_unique<NotificationManager::ExportFinishedNotification>(data, m_id_provider, m_evt_handler, on_removable, path, dir_path), 0);
 }
 
-void  NotificationManager::push_upload_job_notification(wxEvtHandler* evt_handler, int id, float filesize, const std::string& filename, const std::string& host, float percentage)
+void  NotificationManager::push_upload_job_notification(int id, float filesize, const std::string& filename, const std::string& host, float percentage)
 {
 	std::string text = PrintHostUploadNotification::get_upload_job_text(id, filename, host);
 	NotificationData data{ NotificationType::PrintHostUpload, NotificationLevel::ProgressBarNotification, 0, text };
-	push_notification_data(std::make_unique<NotificationManager::PrintHostUploadNotification>(data, m_id_provider, evt_handler, 0, id, filesize), 0);
+	push_notification_data(std::make_unique<NotificationManager::PrintHostUploadNotification>(data, m_id_provider, m_evt_handler, 0, id, filesize), 0);
 }
 void NotificationManager::set_upload_job_notification_percentage(int id, const std::string& filename, const std::string& host, float percentage)
 {
 	std::string text = PrintHostUploadNotification::get_upload_job_text(id, filename, host);
-	bool found = false;
 	for (std::unique_ptr<PopNotification>& notification : m_pop_notifications) {
-		if (notification->get_type() == NotificationType::ProgressBar && notification->compare_text(text)) {
+		if (notification->get_type() == NotificationType::PrintHostUpload && notification->compare_text(text)) {
 			dynamic_cast<PrintHostUploadNotification*>(notification.get())->set_percentage(percentage);
 			wxGetApp().plater()->get_current_canvas3D()->schedule_extra_frame(0);
-			found = true;
 		}
 	}
-	/*
-	if (!found) {
-		push_upload_job_notification(id, filename, host, percentage);
-	}
-	*/
 }
 void NotificationManager::upload_job_notification_show_canceled(int id, const std::string& filename, const std::string& host)
 {
@@ -1270,9 +1264,10 @@ bool NotificationManager::activate_existing(const NotificationManager::PopNotifi
 	for (auto it = m_pop_notifications.begin(); it != m_pop_notifications.end(); ++it) {
 		if ((*it)->get_type() == new_type && !(*it)->is_finished()) {
 			if (std::find(m_multiple_types.begin(), m_multiple_types.end(), new_type) != m_multiple_types.end()) {
-			//if (new_type == NotificationType::CustomNotification || new_type == NotificationType::PlaterWarning || new_type == NotificationType::ProgressBar) {
-				if (!(*it)->compare_text(new_text))
+				// If found same type and same text, return true - update will be performed on the old notif
+				if ((*it)->compare_text(new_text) == false) {
 					continue;
+				}
 			} else if (new_type == NotificationType::SlicingWarning) {
 				auto w1 = dynamic_cast<const SlicingWarningNotification*>(notification);
 				auto w2 = dynamic_cast<const SlicingWarningNotification*>(it->get());
@@ -1284,7 +1279,6 @@ bool NotificationManager::activate_existing(const NotificationManager::PopNotifi
 					continue;
 				}
 			}
-
 			if (it != m_pop_notifications.end() - 1)
 				std::rotate(it, it + 1, m_pop_notifications.end());
 			return true;
