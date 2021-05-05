@@ -1686,6 +1686,10 @@ bool GCodeProcessor::process_cura_tags(const std::string_view comment)
             BOOST_LOG_TRIVIAL(warning) << "GCodeProcessor found unknown extrusion role: " << type;
         }
 
+#if ENABLE_SEAMS_VISUALIZATION
+        if (m_extrusion_role == erExternalPerimeter)
+            m_seams_detector.activate(true);
+#endif // ENABLE_SEAMS_VISUALIZATION
         return true;
     }
 
@@ -1750,6 +1754,9 @@ bool GCodeProcessor::process_simplify3d_tags(const std::string_view comment)
     pos = cmt.find(" outer perimeter");
     if (pos == 0) {
         m_extrusion_role = erExternalPerimeter;
+#if ENABLE_SEAMS_VISUALIZATION
+        m_seams_detector.activate(true);
+#endif // ENABLE_SEAMS_VISUALIZATION
         return true;
     }
 
@@ -1904,6 +1911,11 @@ bool GCodeProcessor::process_craftware_tags(const std::string_view comment)
             BOOST_LOG_TRIVIAL(warning) << "GCodeProcessor found unknown extrusion role: " << type;
         }
 
+#if ENABLE_SEAMS_VISUALIZATION
+        if (m_extrusion_role == erExternalPerimeter)
+            m_seams_detector.activate(true);
+#endif // ENABLE_SEAMS_VISUALIZATION
+
         return true;
     }
 
@@ -1942,6 +1954,11 @@ bool GCodeProcessor::process_ideamaker_tags(const std::string_view comment)
             m_extrusion_role = erNone;
             BOOST_LOG_TRIVIAL(warning) << "GCodeProcessor found unknown extrusion role: " << type;
         }
+
+#if ENABLE_SEAMS_VISUALIZATION
+        if (m_extrusion_role == erExternalPerimeter)
+            m_seams_detector.activate(true);
+#endif // ENABLE_SEAMS_VISUALIZATION
         return true;
     }
 
@@ -2010,6 +2027,9 @@ bool GCodeProcessor::process_kissslicer_tags(const std::string_view comment)
     pos = comment.find(" 'Perimeter Path'");
     if (pos == 0) {
         m_extrusion_role = erExternalPerimeter;
+#if ENABLE_SEAMS_VISUALIZATION
+        m_seams_detector.activate(true);
+#endif // ENABLE_SEAMS_VISUALIZATION
         return true;
     }
 
@@ -2385,27 +2405,28 @@ void GCodeProcessor::process_G1(const GCodeReader::GCodeLine& line)
     }
 
 #if ENABLE_SEAMS_VISUALIZATION
-    // check for seam starting vertex
-    if (type == EMoveType::Extrude && m_extrusion_role == erExternalPerimeter && m_seams_detector.is_active() && !m_seams_detector.has_first_vertex())
-        m_seams_detector.set_first_vertex(m_result.moves.back().position - m_extruder_offsets[m_extruder_id]);
-    // check for seam ending vertex and store the resulting move
-    else if ((type != EMoveType::Extrude || m_extrusion_role != erExternalPerimeter) && m_seams_detector.is_active()) {
-        auto set_end_position = [this](const Vec3f& pos) {
-            m_end_position[X] = pos.x(); m_end_position[Y] = pos.y(); m_end_position[Z] = pos.z();
-        };
+    if (m_seams_detector.is_active()) {
+        // check for seam starting vertex
+        if (type == EMoveType::Extrude && m_extrusion_role == erExternalPerimeter && !m_seams_detector.has_first_vertex())
+            m_seams_detector.set_first_vertex(m_result.moves.back().position - m_extruder_offsets[m_extruder_id]);
+        // check for seam ending vertex and store the resulting move
+        else if ((type != EMoveType::Extrude || m_extrusion_role != erExternalPerimeter) && m_seams_detector.has_first_vertex()) {
+            auto set_end_position = [this](const Vec3f& pos) {
+                m_end_position[X] = pos.x(); m_end_position[Y] = pos.y(); m_end_position[Z] = pos.z();
+            };
 
-        assert(m_seams_detector.has_first_vertex());
-        const Vec3f curr_pos(m_end_position[X], m_end_position[Y], m_end_position[Z]);
-        const Vec3f new_pos = m_result.moves.back().position - m_extruder_offsets[m_extruder_id];
-        const std::optional<Vec3f> first_vertex = m_seams_detector.get_first_vertex();
-        // the threshold value = 0.25 is arbitrary, we may find some smarter condition later
-        if ((new_pos - *first_vertex).norm() < 0.25f) { 
-            set_end_position(0.5f * (new_pos + *first_vertex));
-            store_move_vertex(EMoveType::Seam);
-            set_end_position(curr_pos);
+            const Vec3f curr_pos(m_end_position[X], m_end_position[Y], m_end_position[Z]);
+            const Vec3f new_pos = m_result.moves.back().position - m_extruder_offsets[m_extruder_id];
+            const std::optional<Vec3f> first_vertex = m_seams_detector.get_first_vertex();
+            // the threshold value = 0.0625f == 0.25 * 0.25 is arbitrary, we may find some smarter condition later
+            if ((new_pos - *first_vertex).squaredNorm() < 0.0625f) {
+                set_end_position(0.5f * (new_pos + *first_vertex));
+                store_move_vertex(EMoveType::Seam);
+                set_end_position(curr_pos);
+            }
+
+            m_seams_detector.activate(false);
         }
-
-        m_seams_detector.activate(false);
     }
 #endif // ENABLE_SEAMS_VISUALIZATION
 
