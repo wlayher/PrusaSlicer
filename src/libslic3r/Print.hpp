@@ -57,11 +57,13 @@ enum PrintObjectStep {
 // sharing the same config (including the same assigned extruder(s))
 class PrintRegion
 {
-    friend class Print;
+public:
+    PrintRegion() : m_refcnt(0) {}
+    PrintRegion(const PrintRegionConfig &config) : m_refcnt(0), m_config(config) {}
+    ~PrintRegion() = default;
 
 // Methods NOT modifying the PrintRegion's state:
 public:
-    const Print*                print() const { return m_print; }
     const PrintRegionConfig&    config() const { return m_config; }
 	// 1-based extruder identifier for this region and role.
 	unsigned int 				extruder(FlowRole role) const;
@@ -72,27 +74,22 @@ public:
     coordf_t                    bridging_height_avg(const PrintConfig &print_config) const;
 
     // Collect 0-based extruder indices used to print this region's object.
-	void                        collect_object_printing_extruders(std::vector<unsigned int> &object_extruders) const;
+	void                        collect_object_printing_extruders(const Print &print, std::vector<unsigned int> &object_extruders) const;
 	static void                 collect_object_printing_extruders(const PrintConfig &print_config, const PrintRegionConfig &region_config, const bool has_brim, std::vector<unsigned int> &object_extruders);
 
 // Methods modifying the PrintRegion's state:
 public:
-    Print*                      print() { return m_print; }
     void                        set_config(const PrintRegionConfig &config) { m_config = config; }
     void                        set_config(PrintRegionConfig &&config) { m_config = std::move(config); }
     void                        config_apply_only(const ConfigBase &other, const t_config_option_keys &keys, bool ignore_nonexistent = false) 
                                         { this->m_config.apply_only(other, keys, ignore_nonexistent); }
 
 protected:
+    friend Print;
     size_t             m_refcnt;
 
 private:
-    Print             *m_print;
     PrintRegionConfig  m_config;
-    
-    PrintRegion(Print* print) : m_refcnt(0), m_print(print) {}
-    PrintRegion(Print* print, const PrintRegionConfig &config) : m_refcnt(0), m_print(print), m_config(config) {}
-    ~PrintRegion() = default;
 };
 
 template<typename T>
@@ -512,12 +509,6 @@ protected:
     bool                invalidate_step(PrintStep step);
 
 private:
-	void 				config_diffs(
-		const DynamicPrintConfig &new_full_config, 
-		t_config_option_keys &print_diff, t_config_option_keys &object_diff, t_config_option_keys &region_diff, 
-		t_config_option_keys &full_config_diff, 
-		DynamicPrintConfig &filament_overrides) const;
-
     bool                invalidate_state_by_config_options(const ConfigOptionResolver &new_config, const std::vector<t_config_option_key> &opt_keys);
 
     void                _make_skirt();
@@ -528,9 +519,6 @@ private:
     Polygons            first_layer_islands() const;
     // Return 4 wipe tower corners in the world coordinates (shifted and rotated), including the wipe tower brim.
     std::vector<Point>  first_layer_wipe_tower_corners() const;
-
-    // Declared here to have access to Model / ModelObject / ModelInstance
-    static void         model_volume_list_update_supports(ModelObject &model_object_dst, const ModelObject &model_object_src);
 
     PrintConfig                             m_config;
     PrintObjectConfig                       m_default_object_config;
