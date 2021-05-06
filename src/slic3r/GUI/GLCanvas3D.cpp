@@ -3157,7 +3157,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
     }
 
     if (m_gizmos.on_mouse(evt)) {
-        if (wxWindow::FindFocus() != this->m_canvas)
+        if (wxWindow::FindFocus() != m_canvas)
             // Grab keyboard focus for input in gizmo dialogs.
             m_canvas->SetFocus();
 
@@ -3180,7 +3180,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
         m_mouse.set_move_start_threshold_position_2D_as_invalid();
     }
 
-    if (evt.ButtonDown() && wxWindow::FindFocus() != this->m_canvas)
+    if (evt.ButtonDown() && wxWindow::FindFocus() != m_canvas)
         // Grab keyboard focus on any mouse click event.
         m_canvas->SetFocus();
 
@@ -5935,7 +5935,7 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject& print_object, c
                 {
                     if (layerm->slices.surfaces.empty())
                         continue;
-                    const PrintRegionConfig& cfg = layerm->region()->config();
+                    const PrintRegionConfig& cfg = layerm->region().config();
                     if (cfg.perimeter_extruder.value    == m_selected_extruder ||
                         cfg.infill_extruder.value       == m_selected_extruder ||
                         cfg.solid_infill_extruder.value == m_selected_extruder ) {
@@ -5958,7 +5958,7 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject& print_object, c
                 for (const LayerRegion *layerm : layer->regions()) {
                     if (is_selected_separate_extruder)
                     {
-                        const PrintRegionConfig& cfg = layerm->region()->config();
+                        const PrintRegionConfig& cfg = layerm->region().config();
                         if (cfg.perimeter_extruder.value    != m_selected_extruder ||
                             cfg.infill_extruder.value       != m_selected_extruder ||
                             cfg.solid_infill_extruder.value != m_selected_extruder)
@@ -5966,7 +5966,7 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject& print_object, c
                     }
                     if (ctxt.has_perimeters)
                         _3DScene::extrusionentity_to_verts(layerm->perimeters, float(layer->print_z), copy,
-                        	volume(idx_layer, layerm->region()->config().perimeter_extruder.value, 0));
+                        	volume(idx_layer, layerm->region().config().perimeter_extruder.value, 0));
                     if (ctxt.has_infill) {
                         for (const ExtrusionEntity *ee : layerm->fills.entities) {
                             // fill represents infill extrusions of a single island.
@@ -5975,8 +5975,8 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject& print_object, c
                                 _3DScene::extrusionentity_to_verts(*fill, float(layer->print_z), copy,
 	                                volume(idx_layer, 
 		                                is_solid_infill(fill->entities.front()->role()) ?
-			                                layerm->region()->config().solid_infill_extruder :
-			                                layerm->region()->config().infill_extruder,
+			                                layerm->region().config().solid_infill_extruder :
+			                                layerm->region().config().infill_extruder,
 		                                1));
                         }
                     }
@@ -6201,7 +6201,7 @@ void GLCanvas3D::_load_sla_shells()
 #else
         v.indexed_vertex_array.load_mesh(mesh);
 #endif // ENABLE_SMOOTH_NORMALS
-        v.indexed_vertex_array.finalize_geometry(this->m_initialized);
+        v.indexed_vertex_array.finalize_geometry(m_initialized);
         v.shader_outside_printer_detection_enabled = outside_printer_detection_enabled;
         v.composite_id.volume_id = volume_id;
         v.set_instance_offset(unscale(instance.shift.x(), instance.shift.y(), 0));
