@@ -69,6 +69,7 @@
 #include "UnsavedChangesDialog.hpp"
 #include "SavePresetDialog.hpp"
 #include "PrintHostDialogs.hpp"
+#include "DesktopIntegrationDialog.hpp"
 
 #include "BitmapCache.hpp"
 
@@ -915,6 +916,14 @@ bool GUI_App::on_init_inner()
     }
     else
         load_current_presets();
+
+#if ENABLE_PROJECT_DIRTY_STATE
+    if (plater_ != nullptr) {
+        plater_->reset_project_dirty_initial_presets();
+        plater_->update_project_dirty_from_presets();
+    }
+#endif // ENABLE_PROJECT_DIRTY_STATE
+
     mainframe->Show(true);
 
     obj_list()->set_min_height();
@@ -1634,6 +1643,10 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
         local_menu->Append(config_id_base + ConfigMenuSnapshots, _L("&Configuration Snapshots") + dots, _L("Inspect / activate configuration snapshots"));
         local_menu->Append(config_id_base + ConfigMenuTakeSnapshot, _L("Take Configuration &Snapshot"), _L("Capture a configuration snapshot"));
         local_menu->Append(config_id_base + ConfigMenuUpdate, _L("Check for updates"), _L("Check for configuration updates"));
+#ifdef __linux__
+        if (DesktopIntegrationDialog::integration_possible())
+            local_menu->Append(config_id_base + ConfigMenuDesktopIntegration, _L("Desktop Integration"), _L("Desktop Integration"));    
+#endif        
         local_menu->AppendSeparator();
     }
     local_menu->Append(config_id_base + ConfigMenuPreferences, _L("&Preferences") + dots +
@@ -1674,9 +1687,18 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
 		case ConfigMenuUpdate:
 			check_updates(true);
 			break;
+#ifdef __linux__
+        case ConfigMenuDesktopIntegration:
+            show_desktop_integration_dialog();
+            break;
+#endif
         case ConfigMenuTakeSnapshot:
             // Take a configuration snapshot.
+#if ENABLE_PROJECT_DIRTY_STATE
+            if (check_and_save_current_preset_changes()) {
+#else
             if (check_unsaved_changes()) {
+#endif // ENABLE_PROJECT_DIRTY_STATE
                 wxTextEntryDialog dlg(nullptr, _L("Taking configuration snapshot"), _L("Snapshot name"));
                 
                 // set current normal font for dialog children, 
@@ -1691,7 +1713,11 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
             }
             break;
         case ConfigMenuSnapshots:
+#if ENABLE_PROJECT_DIRTY_STATE
+            if (check_and_save_current_preset_changes()) {
+#else
             if (check_unsaved_changes()) {
+#endif // ENABLE_PROJECT_DIRTY_STATE
                 std::string on_snapshot;
                 if (Config::SnapshotDB::singleton().is_on_snapshot(*app_config))
                     on_snapshot = app_config->get("on_snapshot");
@@ -1792,8 +1818,57 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
     menu->Append(local_menu, _L("&Configuration"));
 }
 
+#if ENABLE_PROJECT_DIRTY_STATE
+bool GUI_App::has_unsaved_preset_changes() const
+{
+    PrinterTechnology printer_technology = preset_bundle->printers.get_edited_preset().printer_technology();
+    for (const Tab* const tab : tabs_list) {
+        if (tab->supports_printer_technology(printer_technology) && tab->saved_preset_is_dirty())
+            return true;
+    }
+    return false;
+}
+
+bool GUI_App::has_current_preset_changes() const
+{
+    PrinterTechnology printer_technology = preset_bundle->printers.get_edited_preset().printer_technology();
+    for (const Tab* const tab : tabs_list) {
+        if (tab->supports_printer_technology(printer_technology) && tab->current_preset_is_dirty())
+            return true;
+    }
+    return false;
+}
+
+void GUI_App::update_saved_preset_from_current_preset()
+{
+    PrinterTechnology printer_technology = preset_bundle->printers.get_edited_preset().printer_technology();
+    for (Tab* tab : tabs_list) {
+        if (tab->supports_printer_technology(printer_technology))
+            tab->update_saved_preset_from_current_preset();
+    }
+}
+
+std::vector<std::pair<unsigned int, std::string>> GUI_App::get_selected_presets() const
+{
+    std::vector<std::pair<unsigned int, std::string>> ret;
+    PrinterTechnology printer_technology = preset_bundle->printers.get_edited_preset().printer_technology();
+    for (Tab* tab : tabs_list) {
+        if (tab->supports_printer_technology(printer_technology)) {
+            const PresetCollection* presets = tab->get_presets();
+            ret.push_back({ static_cast<unsigned int>(presets->type()), presets->get_selected_preset_name() });
+        }
+    }
+    return ret;
+}
+#endif // ENABLE_PROJECT_DIRTY_STATE
+
 // This is called when closing the application, when loading a config file or when starting the config wizard
 // to notify the user whether he is aware that some preset changes will be lost.
+#if ENABLE_PROJECT_DIRTY_STATE
+bool GUI_App::check_and_save_current_preset_changes(const wxString& header)
+{
+    if (this->plater()->model().objects.empty() && has_current_preset_changes()) {
+#else
 bool GUI_App::check_unsaved_changes(const wxString &header)
 {
     PrinterTechnology printer_technology = preset_bundle->printers.get_edited_preset().printer_technology();
@@ -1805,8 +1880,8 @@ bool GUI_App::check_unsaved_changes(const wxString &header)
             break;
         }
 
-    if (has_unsaved_changes)
-    {
+    if (has_unsaved_changes) {
+#endif // ENABLE_PROJECT_DIRTY_STATE
         UnsavedChangesDialog dlg(header);
         if (wxGetApp().app_config->get("default_action_on_close_application") == "none" && dlg.ShowModal() == wxID_CANCEL)
             return false;
@@ -2064,6 +2139,15 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
     }
 
     return res;
+}
+
+void GUI_App::show_desktop_integration_dialog()
+{
+#ifdef __linux__
+    //wxCHECK_MSG(mainframe != nullptr, false, "Internal error: Main frame not created / null");
+    DesktopIntegrationDialog dialog(mainframe);
+    dialog.ShowModal();
+#endif //__linux__
 }
 
 #if ENABLE_THUMBNAIL_GENERATOR_DEBUG
