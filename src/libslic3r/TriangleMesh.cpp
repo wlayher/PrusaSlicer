@@ -615,9 +615,8 @@ std::vector<ExPolygons> TriangleMesh::slice(const std::vector<double> &z)
 {
     // convert doubles to floats
     std::vector<float> z_f(z.begin(), z.end());
-    std::vector<ExPolygons> layers;
-    slice_mesh(*this, z_f, 0.0004f, layers);
-    return layers;
+    assert(this->has_shared_vertices());
+    return slice_mesh_ex(this->its, z_f, 0.0004f);
 }
 
 void TriangleMesh::require_shared_vertices()
@@ -686,11 +685,12 @@ std::vector<std::vector<size_t>> create_vertex_faces_index(const indexed_triangl
     return index;
 }
 
-// Map from a facet edge to a neighbor face index or -1 if no neighbor exists.
+// Map from a face edge to a unique edge identifier or -1 if no neighbor exists.
+// Two neighbor faces share a unique edge identifier even if they are flipped.
 template<typename ThrowOnCancelCallback>
-static inline std::vector<int> create_face_neighbors_index_impl(const indexed_triangle_set &its, ThrowOnCancelCallback throw_on_cancel)
+static inline std::vector<Vec3i> create_face_neighbors_index_impl(const indexed_triangle_set &its, ThrowOnCancelCallback throw_on_cancel)
 {
-    std::vector<int> out(its.indices.size() * 3, -1);
+    std::vector<Vec3i> out(its.indices.size(), Vec3i(-1, -1, -1));
 
     // Create a mapping from triangle edge into face.
     struct EdgeToFace {
@@ -754,10 +754,10 @@ static inline std::vector<int> create_face_neighbors_index_impl(const indexed_tr
                 }
         }
         // Assign an edge index to the 1st face.
-        out[edge_i.face * 3 + std::abs(edge_i.face_edge) - 1] = num_edges;
+        out[edge_i.face](std::abs(edge_i.face_edge) - 1) = num_edges;
         if (found) {
             EdgeToFace &edge_j = edges_map[j];
-            out[edge_j.face * 3 + std::abs(edge_j.face_edge) - 1] = num_edges;
+            out[edge_j.face](std::abs(edge_j.face_edge) - 1) = num_edges;
             // Mark the edge as connected.
             edge_j.face = -1;
         }
@@ -769,14 +769,77 @@ static inline std::vector<int> create_face_neighbors_index_impl(const indexed_tr
     return out;
 }
 
-std::vector<int> create_face_neighbors_index(const indexed_triangle_set &its)
+std::vector<Vec3i> create_face_neighbors_index(const indexed_triangle_set &its)
 {
     return create_face_neighbors_index_impl(its, [](){});
 }
 
-std::vector<int> create_face_neighbors_index(const indexed_triangle_set &its, std::function<void()> throw_on_cancel_callback)
+std::vector<Vec3i> create_face_neighbors_index(const indexed_triangle_set &its, std::function<void()> throw_on_cancel_callback)
 {
     return create_face_neighbors_index_impl(its, throw_on_cancel_callback);
+}
+
+// Merge duplicate vertices, return number of vertices removed.
+int its_merge_vertices(indexed_triangle_set &its, bool shrink_to_fit)
+{
+    // 1) Sort indices to vertices lexicographically by coordinates AND vertex index.
+    auto sorted = reserve_vector<int>(its.vertices.size());
+    for (int i = 0; i < int(its.vertices.size()); ++ i)
+        sorted.emplace_back(i);
+    std::sort(sorted.begin(), sorted.end(), [&its](int il, int ir) {
+        const Vec3f &l = its.vertices[il];
+        const Vec3f &r = its.vertices[ir];
+        // Sort lexicographically by coordinates AND vertex index.
+        return l.x() < r.x() || (l.x() == r.x() && (l.y() < r.y() || (l.y() == r.y() && (l.z() < r.z() || (l.z() == r.z() && il < ir)))));
+    });
+
+    // 2) Map duplicate vertices to the one with the lowest vertex index.
+    // The vertex to stay will have a map_vertices[...] == -1 index assigned, the other vertices will point to it.
+    std::vector<int> map_vertices(its.vertices.size(), -1);
+    for (int i = 0; i < int(sorted.size());) {
+        const int    u = sorted[i];
+        const Vec3f &p = its.vertices[u];
+        int j = i;
+        for (++ j; j < int(sorted.size()); ++ j) {
+            const int    v = sorted[j];
+            const Vec3f &q = its.vertices[v];
+            if (p != q)
+                break;
+            assert(v > u);
+            map_vertices[v] = u;
+        }
+        i = j;
+    }
+
+    // 3) Shrink its.vertices, update map_vertices with the new vertex indices.
+    int k = 0;
+    for (int i = 0; i < int(its.vertices.size()); ++ i) {
+        if (map_vertices[i] == -1) {
+            map_vertices[i] = k;
+            if (k < i)
+                its.vertices[k] = its.vertices[i];
+            ++ k;
+        } else {
+            assert(map_vertices[i] < i);
+            map_vertices[i] = map_vertices[map_vertices[i]];
+        }
+    }
+
+    int num_erased = int(its.vertices.size()) - k;
+
+    if (num_erased) {
+        // Shrink the vertices.
+        its.vertices.erase(its.vertices.begin() + k, its.vertices.end());
+        // Remap face indices.
+        for (stl_triangle_vertex_indices &face : its.indices)
+            for (int i = 0; i < 3; ++ i)
+                face(i) = map_vertices[face(i)];
+        // Optionally shrink to fit (reallocate) vertices.
+        if (shrink_to_fit)
+            its.vertices.shrink_to_fit();
+    }
+
+    return num_erased;
 }
 
 int its_remove_degenerate_faces(indexed_triangle_set &its, bool shrink_to_fit)
@@ -834,6 +897,56 @@ void its_shrink_to_fit(indexed_triangle_set &its)
 {
     its.indices.shrink_to_fit();
     its.vertices.shrink_to_fit();
+}
+
+template<typename TransformVertex>
+void its_collect_mesh_projection_points_above(const indexed_triangle_set &its, const TransformVertex &transform_fn, const float z, Points &all_pts)
+{
+    all_pts.reserve(all_pts.size() + its.indices.size() * 3);
+    for (const stl_triangle_vertex_indices &tri : its.indices) {
+        const Vec3f pts[3] = { transform_fn(its.vertices[tri(0)]), transform_fn(its.vertices[tri(1)]), transform_fn(its.vertices[tri(2)]) };
+        int iprev = 3;
+        for (int iedge = 0; iedge < 3; ++ iedge) {
+            const Vec3f &p1 = pts[iprev];
+            const Vec3f &p2 = pts[iedge];
+            if ((p1.z() < z && p2.z() > z) || (p2.z() < z && p1.z() > z)) {
+                // Edge crosses the z plane. Calculate intersection point with the plane.
+                float t = z / (p2.z() - p1.z());
+                all_pts.emplace_back(scaled<coord_t>(p1.x() + (p2.x() - p1.x()) * t), scaled<coord_t>(p2.x() + (p2.y() - p2.y()) * t));
+            }
+            if (p2.z() > z)
+                all_pts.emplace_back(scaled<coord_t>(p2.x()), scaled<coord_t>(p2.y()));
+            iprev = iedge;
+        }
+    }
+}
+
+void its_collect_mesh_projection_points_above(const indexed_triangle_set &its, const Matrix3f &m, const float z, Points &all_pts)
+{
+    return its_collect_mesh_projection_points_above(its, [m](const Vec3f &p){ return m * p; }, z, all_pts);
+}
+
+void its_collect_mesh_projection_points_above(const indexed_triangle_set &its, const Transform3f &t, const float z, Points &all_pts)
+{
+    return its_collect_mesh_projection_points_above(its, [t](const Vec3f &p){ return t * p; }, z, all_pts);
+}
+
+template<typename TransformVertex>
+Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const TransformVertex &transform_fn, const float z)
+{
+    Points all_pts;
+    its_collect_mesh_projection_points_above(its, transform_fn, z, all_pts);
+    return Geometry::convex_hull(std::move(all_pts));
+}
+
+Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const Matrix3f &m, const float z)
+{
+    return its_convex_hull_2d_above(its, [m](const Vec3f &p){ return m * p; }, z);
+}
+
+Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const Transform3f &t, const float z)
+{
+    return its_convex_hull_2d_above(its, [t](const Vec3f &p){ return t * p; }, z);
 }
 
 // Generate the vertex list for a cube solid of arbitrary size in X/Y/Z.

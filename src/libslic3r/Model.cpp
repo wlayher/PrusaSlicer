@@ -937,31 +937,7 @@ Polygon ModelObject::convex_hull_2d(const Transform3d &trafo_instance) const
             }
 #endif // ENABLE_ALLOW_NEGATIVE_Z
         }
-    std::sort(pts.begin(), pts.end(), [](const Point& a, const Point& b) { return a(0) < b(0) || (a(0) == b(0) && a(1) < b(1)); });
-    pts.erase(std::unique(pts.begin(), pts.end(), [](const Point& a, const Point& b) { return a(0) == b(0) && a(1) == b(1); }), pts.end());
-
-    Polygon hull;
-    int n = (int)pts.size();
-    if (n >= 3) {
-        int k = 0;
-        hull.points.resize(2 * n);
-        // Build lower hull
-        for (int i = 0; i < n; ++ i) {
-            while (k >= 2 && pts[i].ccw(hull[k-2], hull[k-1]) <= 0)
-                -- k;
-            hull[k ++] = pts[i];
-        }
-        // Build upper hull
-        for (int i = n-2, t = k+1; i >= 0; i--) {
-            while (k >= t && pts[i].ccw(hull[k-2], hull[k-1]) <= 0)
-                -- k;
-            hull[k ++] = pts[i];
-        }
-        hull.points.resize(k);
-        assert(hull.points.front() == hull.points.back());
-        hull.points.pop_back();
-    }
-    return hull;
+    return Geometry::convex_hull(std::move(pts));
 }
 
 void ModelObject::center_around_origin(bool include_modifiers)
@@ -1213,32 +1189,32 @@ ModelObjectPtrs ModelObject::cut(size_t instance, coordf_t z, bool keep_upper, b
         }
         else if (! volume->mesh().empty()) {
             
-            TriangleMesh upper_mesh, lower_mesh;
-
             // Transform the mesh by the combined transformation matrix.
             // Flip the triangles in case the composite transformation is left handed.
 			TriangleMesh mesh(volume->mesh());
 			mesh.transform(instance_matrix * volume_matrix, true);
 			volume->reset_mesh();
-            
-            mesh.require_shared_vertices();
-            
-            // Perform cut
-            TriangleMeshSlicer tms(&mesh);
-            tms.cut(float(z), &upper_mesh, &lower_mesh);
-
             // Reset volume transformation except for offset
             const Vec3d offset = volume->get_offset();
             volume->set_transformation(Geometry::Transformation());
             volume->set_offset(offset);
 
-            if (keep_upper) {
-                upper_mesh.repair();
-                upper_mesh.reset_repair_stats();
-            }
-            if (keep_lower) {
-                lower_mesh.repair();
-                lower_mesh.reset_repair_stats();
+            // Perform cut
+            TriangleMesh upper_mesh, lower_mesh;
+            {
+                indexed_triangle_set upper_its, lower_its;
+                mesh.require_shared_vertices();
+                cut_mesh(mesh.its, float(z), &upper_its, &lower_its);
+                if (keep_upper) {
+                    upper_mesh = TriangleMesh(upper_its);
+                    upper_mesh.repair();
+                    upper_mesh.reset_repair_stats();
+                }
+                if (keep_lower) {
+                    lower_mesh = TriangleMesh(lower_its);
+                    lower_mesh.repair();
+                    lower_mesh.reset_repair_stats();
+                }
             }
 
             if (keep_upper && upper_mesh.facets_count() > 0) {
@@ -1936,7 +1912,9 @@ arrangement::ArrangePolygon ModelInstance::get_arrange_polygon() const
 
     Polygon p = get_object()->convex_hull_2d(trafo_instance);
 
+#if !ENABLE_ALLOW_NEGATIVE_Z
     assert(!p.points.empty());
+#endif // !ENABLE_ALLOW_NEGATIVE_Z
 
 //    if (!p.points.empty()) {
 //        Polygons pp{p};

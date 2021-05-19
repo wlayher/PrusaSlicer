@@ -93,14 +93,33 @@ private:
 // vertex.
 std::vector<std::vector<size_t>> create_vertex_faces_index(const indexed_triangle_set &its);
 
-// Map from a facet edge to a neighbor face index or -1 if no neighbor exists.
-std::vector<int> create_face_neighbors_index(const indexed_triangle_set &its);
-std::vector<int> create_face_neighbors_index(const indexed_triangle_set &its, std::function<void()> throw_on_cancel_callback);
+// Map from a face edge to a unique edge identifier or -1 if no neighbor exists.
+// Two neighbor faces share a unique edge identifier even if they are flipped.
+// Used for chaining slice lines into polygons.
+std::vector<Vec3i> create_face_neighbors_index(const indexed_triangle_set &its);
+std::vector<Vec3i> create_face_neighbors_index(const indexed_triangle_set &its, std::function<void()> throw_on_cancel_callback);
+
+// Merge duplicate vertices, return number of vertices removed.
+// This function will happily create non-manifolds if more than two faces share the same vertex position
+// or more than two faces share the same edge position!
+int its_merge_vertices(indexed_triangle_set &its, bool shrink_to_fit = true);
+
 // Remove degenerate faces, return number of faces removed.
 int its_remove_degenerate_faces(indexed_triangle_set &its, bool shrink_to_fit = true);
+
 // Remove vertices, which none of the faces references. Return number of freed vertices.
 int its_compactify_vertices(indexed_triangle_set &its, bool shrink_to_fit = true);
+
+// Shrink the vectors of its.vertices and its.faces to a minimum size by reallocating the two vectors.
 void its_shrink_to_fit(indexed_triangle_set &its);
+
+// For convex hull calculation: Transform mesh, trim it by the Z plane and collect all vertices. Duplicate vertices will be produced.
+void its_collect_mesh_projection_points_above(const indexed_triangle_set &its, const Matrix3f &m, const float z, Points &all_pts);
+void its_collect_mesh_projection_points_above(const indexed_triangle_set &its, const Transform3f &t, const float z, Points &all_pts);
+
+// Calculate 2D convex hull of a transformed and clipped mesh. Uses the function above.
+Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const Matrix3f &m, const float z);
+Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const Transform3f &t, const float z);
 
 TriangleMesh make_cube(double x, double y, double z);
 
