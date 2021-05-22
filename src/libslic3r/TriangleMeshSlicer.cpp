@@ -23,6 +23,8 @@
 #endif
 
 #include <assert.h>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/lock_guard.hpp>
 
 #if defined(SLIC3R_DEBUG) || defined(SLIC3R_DEBUG_SLICE_PROCESSING)
 #include "SVG.hpp"
@@ -1075,7 +1077,7 @@ std::vector<Polygons> slice_mesh(
                 auto t = params.trafo;
                 t.prescale(Vec3d(s, s, 1.));
                 auto tf = t.cast<float>();
-                slice_make_lines(mesh.vertices, [tf](const Vec3f &p) { return tf * p; }, mesh.indices, facets_edges, zs, throw_on_cancel);
+                lines = slice_make_lines(mesh.vertices, [tf](const Vec3f &p) { return tf * p; }, mesh.indices, facets_edges, zs, throw_on_cancel);
             }
         } else {
             // Copy and scale vertices in XY, don't scale in Z.
