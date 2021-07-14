@@ -27,10 +27,12 @@
 #include "GLCanvas3D.hpp"
 #include "Plater.hpp"
 #include "3DBed.hpp"
+#include "MsgDialog.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/GCode/ThumbnailData.hpp"
+#include "../Utils/MacDarkMode.hpp"
 
 namespace Slic3r {
 namespace GUI {
@@ -73,7 +75,7 @@ GalleryDialog::GalleryDialog(wxWindow* parent) :
     wxStaticText* label_top = new wxStaticText(this, wxID_ANY, _L("Select shape from the gallery") + ":");
 
     m_list_ctrl = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxSize(55 * wxGetApp().em_unit(), 35 * wxGetApp().em_unit()),
-                                wxLC_ICON | wxLC_NO_HEADER | wxLC_ALIGN_TOP | wxSIMPLE_BORDER);
+                                wxLC_ICON | wxSIMPLE_BORDER);
     m_list_ctrl->Bind(wxEVT_LIST_ITEM_SELECTED, &GalleryDialog::select, this);
     m_list_ctrl->Bind(wxEVT_LIST_ITEM_DESELECTED, &GalleryDialog::deselect, this);
     m_list_ctrl->Bind(wxEVT_LIST_ITEM_ACTIVATED, [this](wxListEvent& event) {
@@ -81,10 +83,12 @@ GalleryDialog::GalleryDialog(wxWindow* parent) :
         select(event);
         this->EndModal(wxID_OK);
     });
+#ifdef _WIN32
     this->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
         event.Skip();
         m_list_ctrl->Arrange();
     });
+#endif
 
     wxStdDialogButtonSizer* buttons = this->CreateStdDialogButtonSizer(wxOK | wxCANCEL);
     wxButton* ok_btn = static_cast<wxButton*>(FindWindowById(wxID_OK, this));
@@ -97,7 +101,7 @@ GalleryDialog::GalleryDialog(wxWindow* parent) :
         wxButton* btn = new wxButton(this, ID, title);
         btn->SetToolTip(tooltip);
         btn->Bind(wxEVT_UPDATE_UI, [enable_fn](wxUpdateUIEvent& evt) { evt.Enable(enable_fn()); });
-        buttons->Insert(pos, btn, 0, wxRIGHT, BORDER_W);
+        buttons->Insert(pos, btn, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, BORDER_W);
         this->Bind(wxEVT_BUTTON, method, this, ID);
     };
 
@@ -150,42 +154,18 @@ void GalleryDialog::on_dpi_changed(const wxRect& suggested_rect)
     Refresh();
 }
 
-//static void add_border(wxImage& image)
-//{
-//    const wxColour& clr = wxGetApp().get_color_hovered_btn_label();
-
-//    auto px_data = (uint8_t*)image.GetData();
-//    auto a_data = (uint8_t*)image.GetAlpha();
-
-//    int width = image.GetWidth();
-//    int height = image.GetHeight();
-//    int border_width = 1;
-
-//    for (size_t x = 0; x < width; ++x) {
-//        for (size_t y = 0; y < height; ++y) {
-//            if (x < border_width || y < border_width ||
-//                x >= (width - border_width) || y >= (height - border_width)) {
-//                const size_t idx = (x + y * width);
-//                const size_t idx_rgb = (x + y * width) * 3;
-//                px_data[idx_rgb] = clr.Red();
-//                px_data[idx_rgb + 1] = clr.Green();
-//                px_data[idx_rgb + 2] = clr.Blue();
-//                if (a_data)
-//                    a_data[idx] = 255u;
-//            }
-//        }
-//    }
-//}
-
 static void add_lock(wxImage& image) 
 {
-    wxBitmap bmp = create_scaled_bitmap("lock", nullptr, 22);
+    int lock_sz = 22;
+#ifdef __APPLE__
+    lock_sz /= mac_max_scaling_factor();
+#endif
+    wxBitmap bmp = create_scaled_bitmap("lock", nullptr, lock_sz);
 
     wxImage lock_image = bmp.ConvertToImage();
     if (!lock_image.IsOk() || lock_image.GetWidth() == 0 || lock_image.GetHeight() == 0)
         return;
 
-    int icon_sz = 16;
     auto lock_px_data = (uint8_t*)lock_image.GetData();
     auto lock_a_data = (uint8_t*)lock_image.GetAlpha();
     int lock_width  = lock_image.GetWidth();
@@ -216,12 +196,11 @@ static void add_lock(wxImage& image)
             px_data[idx_rgb + 2] = lock_px_data[lock_idx_rgb + 2];
         }
     }
-//    add_border(image);
 }
 
-static void add_default_image(wxImageList* img_list, bool is_system, std::string stl_path)
+static void add_default_image(wxImageList* img_list, bool is_system)
 {
-    wxBitmap bmp = create_scaled_bitmap("cog", nullptr, IMG_PX_CNT, true);    
+    wxBitmap bmp = create_scaled_bitmap("cog", nullptr, IMG_PX_CNT, true);
 
     if (is_system) {
         wxImage image = bmp.ConvertToImage();
@@ -235,12 +214,14 @@ static void add_default_image(wxImageList* img_list, bool is_system, std::string
 
 static fs::path get_dir(bool sys_dir)
 {
-    return fs::absolute(fs::path(gallery_dir()) / (sys_dir ? "system" : "custom")).make_preferred();
+    if (sys_dir)
+        return fs::absolute(fs::path(sys_shapes_dir())).make_preferred();
+    return fs::absolute(fs::path(data_dir()) / "shapes").make_preferred();
 }
 
 static bool custom_exists() 
 {
-    return fs::exists(fs::absolute(fs::path(gallery_dir()) / "custom").make_preferred());
+    return fs::exists(get_dir(false));
 }
 
 static std::string get_dir_path(bool sys_dir) 
@@ -320,12 +301,17 @@ void GalleryDialog::load_label_icon_list()
         fs::path dir = get_dir(sys_dir);
         dir_path = get_dir_path(sys_dir);
 
+        std::vector<std::string> sorted_names;
         for (auto& dir_entry : fs::directory_iterator(dir))
-            if (is_stl_file(dir_entry)) {
-                std::string name = dir_entry.path().stem().string();
-                Item item = Item{ name, sys_dir };
-                items.push_back(item);
-            }
+            if (TriangleMesh mesh; is_stl_file(dir_entry) && mesh.ReadSTLFile(dir_entry.path().string().c_str()))
+                sorted_names.push_back(dir_entry.path().stem().string());
+
+        // sort the filename case insensitive
+        std::sort(sorted_names.begin(), sorted_names.end(), [](const std::string& a, const std::string& b)
+            { return boost::algorithm::to_lower_copy(a) < boost::algorithm::to_lower_copy(b); });
+
+        for (const std::string& name : sorted_names)
+            items.push_back(Item{ name, sys_dir });
     };
 
     wxBusyCursor busy;
@@ -350,9 +336,10 @@ void GalleryDialog::load_label_icon_list()
             generate_thumbnail_from_stl(stl_name);
 
         wxImage image;
-        if (!image.LoadFile(from_u8(img_name), wxBITMAP_TYPE_PNG) ||
+        if (!image.CanRead(from_u8(img_name)) ||
+            !image.LoadFile(from_u8(img_name), wxBITMAP_TYPE_PNG) ||
             image.GetWidth() == 0 || image.GetHeight() == 0) {
-            add_default_image(m_image_list, item.is_system, stl_name);
+            add_default_image(m_image_list, item.is_system);
             continue;
         }
         image.Rescale(px_cnt, px_cnt, wxIMAGE_QUALITY_BILINEAR);
@@ -369,7 +356,7 @@ void GalleryDialog::load_label_icon_list()
     for (int i = 0; i < img_cnt; i++) {
         m_list_ctrl->InsertItem(i, from_u8(list_items[i].name), i);
         if (list_items[i].is_system)
-            m_list_ctrl->SetItemFont(i, m_list_ctrl->GetItemFont(i).Bold());
+            m_list_ctrl->SetItemFont(i, wxGetApp().bold_font());
     }
 }
 
@@ -397,23 +384,33 @@ void GalleryDialog::add_custom_shapes(wxEvent& event)
 
 void GalleryDialog::del_custom_shapes(wxEvent& event)
 {
-    auto dest_dir = get_dir(false);
+    auto custom_dir = get_dir(false);
 
-    for (const Item& item : m_selected_items) {
-        std::string filename = item.name + ".stl";
-
-        if (!fs::exists(dest_dir / filename))
-            continue;
+    auto remove_file = [custom_dir](const std::string& name) {
+        if (!fs::exists(custom_dir / name))
+            return;
         try {
-            fs::remove(dest_dir / filename);
+            fs::remove(custom_dir / name);
         }
         catch (fs::filesystem_error const& e) {
             std::cerr << e.what() << '\n';
-            return;
         }
+    };
+
+    for (const Item& item : m_selected_items) {
+        remove_file(item.name + ".stl");
+        remove_file(item.name + ".png");
     }
 
     update();
+}
+
+static void show_warning(const wxString& title, const std::string& error_file_type)
+{
+    const wxString msg_text = format_wxstr(_L("It looks like selected %1%-file has an error or is destructed.\n"
+        "We can't load this file"), error_file_type);
+    MessageDialog dialog(nullptr, msg_text, title, wxICON_WARNING | wxOK);
+    dialog.ShowModal();
 }
 
 void GalleryDialog::replace_custom_png(wxEvent& event)
@@ -433,9 +430,14 @@ void GalleryDialog::replace_custom_png(wxEvent& event)
     if (input_files.IsEmpty())
         return;
 
+    if (wxImage image; !image.CanRead(input_files.Item(0))) {
+        show_warning(_L("Replacing of the PNG"), "PNG");
+        return;
+    }
+
     try {
         fs::path current = fs::path(into_u8(input_files.Item(0)));
-        fs::copy_file(current, get_dir(false) / (m_selected_items[0].name + ".png"));
+        fs::copy_file(current, get_dir(false) / (m_selected_items[0].name + ".png"), fs::copy_option::overwrite_if_exists);
     }
     catch (fs::filesystem_error const& e) {
         std::cerr << e.what() << '\n';
@@ -491,6 +493,11 @@ bool GalleryDialog::load_files(const wxArrayString& input_files)
     // Iterate through the source directory
     for (size_t i = 0; i < input_files.size(); ++i) {
         std::string input_file = into_u8(input_files.Item(i));
+
+        if (TriangleMesh mesh; !mesh.ReadSTLFile(input_file.c_str())) {
+            show_warning(format_wxstr(_L("Loading of the \"%1%\""), input_file), "STL");
+            continue;
+        }
 
         try {
             fs::path current = fs::path(input_file);
