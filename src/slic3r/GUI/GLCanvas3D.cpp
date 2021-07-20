@@ -788,7 +788,6 @@ void GLCanvas3D::Tooltip::render(const Vec2d& mouse_position, GLCanvas3D& canvas
     ImGui::PopStyleVar(2);
 }
 
-#if ENABLE_SEQUENTIAL_LIMITS
 void GLCanvas3D::SequentialPrintClearance::set_polygons(const Polygons& polygons)
 {
     m_perimeter.reset();
@@ -875,7 +874,6 @@ void GLCanvas3D::SequentialPrintClearance::render()
 
     shader->stop_using();
 }
-#endif // ENABLE_SEQUENTIAL_LIMITS
 
 wxDEFINE_EVENT(EVT_GLCANVAS_SCHEDULE_BACKGROUND_PROCESS, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_OBJECT_SELECT, SimpleEvent);
@@ -893,9 +891,7 @@ wxDEFINE_EVENT(EVT_GLCANVAS_WIPETOWER_MOVED, Vec3dEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_WIPETOWER_ROTATED, Vec3dEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_ENABLE_ACTION_BUTTONS, Event<bool>);
 wxDEFINE_EVENT(EVT_GLCANVAS_UPDATE_GEOMETRY, Vec3dsEvent<2>);
-#if ENABLE_SEQUENTIAL_LIMITS
 wxDEFINE_EVENT(EVT_GLCANVAS_MOUSE_DRAGGING_STARTED, SimpleEvent);
-#endif // ENABLE_SEQUENTIAL_LIMITS
 wxDEFINE_EVENT(EVT_GLCANVAS_MOUSE_DRAGGING_FINISHED, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_UPDATE_BED_SHAPE, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_TAB, SimpleEvent);
@@ -1489,9 +1485,7 @@ void GLCanvas3D::render()
     _render_objects(GLVolumeCollection::ERenderType::Transparent);
 #endif // ENABLE_DELAYED_TRANSPARENT_VOLUMES_RENDERING
 
-#if ENABLE_SEQUENTIAL_LIMITS
     _render_sequential_clearance();
-#endif // ENABLE_SEQUENTIAL_LIMITS
 #if ENABLE_RENDER_SELECTION_CENTER
     _render_selection_center();
 #endif // ENABLE_RENDER_SELECTION_CENTER
@@ -1881,7 +1875,7 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
                     volume->extruder_id = extruder_id;
 
                 volume->is_modifier = !mvs->model_volume->is_model_part();
-                volume->set_color_from_model_volume(mvs->model_volume);
+                volume->set_color_from_model_volume(*mvs->model_volume);
 
                 // updates volumes transformations
                 volume->set_instance_transformation(mvs->model_volume->get_object()->instances[mvs->composite_id.instance_id]->get_transformation());
@@ -2986,7 +2980,6 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
         m_mouse.set_start_position_3D_as_invalid();
         m_mouse.position = pos.cast<double>();
 
-#if ENABLE_SEQUENTIAL_LIMITS
         if (evt.Dragging() && current_printer_technology() == ptFFF && fff_print()->config().complete_objects) {
             switch (m_gizmos.get_current_type())
             {
@@ -3000,7 +2993,6 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
             default: { break; }
             }
         }
-#endif // ENABLE_SEQUENTIAL_LIMITS
 
         return;
     }
@@ -3124,9 +3116,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
                         m_mouse.drag.move_volume_idx = volume_idx;
                         m_selection.start_dragging();
                         m_mouse.drag.start_position_3D = m_mouse.scene_position;
-#if ENABLE_SEQUENTIAL_LIMITS
                         m_sequential_print_clearance_first_displacement = true;
-#endif // ENABLE_SEQUENTIAL_LIMITS
                         m_moving = true;
                     }
                 }
@@ -3172,10 +3162,8 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
             }
 
             m_selection.translate(cur_pos - m_mouse.drag.start_position_3D);
-#if ENABLE_SEQUENTIAL_LIMITS
             if (current_printer_technology() == ptFFF && fff_print()->config().complete_objects)
                 update_sequential_clearance();
-#endif // ENABLE_SEQUENTIAL_LIMITS
             wxGetApp().obj_manipul()->set_dirty();
             m_dirty = true;
         }
@@ -3455,9 +3443,7 @@ void GLCanvas3D::do_move(const std::string& snapshot_type)
     if (wipe_tower_origin != Vec3d::Zero())
         post_event(Vec3dEvent(EVT_GLCANVAS_WIPETOWER_MOVED, std::move(wipe_tower_origin)));
 
-#if ENABLE_SEQUENTIAL_LIMITS
     reset_sequential_print_clearance();
-#endif // ENABLE_SEQUENTIAL_LIMITS
 
     m_dirty = true;
 }
@@ -3805,7 +3791,6 @@ void GLCanvas3D::mouse_up_cleanup()
         m_canvas->ReleaseMouse();
 }
 
-#if ENABLE_SEQUENTIAL_LIMITS
 void GLCanvas3D::update_sequential_clearance()
 {
     if (current_printer_technology() != ptFFF || !fff_print()->config().complete_objects)
@@ -3895,7 +3880,6 @@ void GLCanvas3D::update_sequential_clearance()
     set_sequential_print_clearance_render_fill(false);
     set_sequential_print_clearance_polygons(polygons);
 }
-#endif // ENABLE_SEQUENTIAL_LIMITS
 
 bool GLCanvas3D::_is_shown_on_screen() const
 {
@@ -5158,7 +5142,6 @@ void GLCanvas3D::_render_selection() const
         m_selection.render(scale_factor);
 }
 
-#if ENABLE_SEQUENTIAL_LIMITS
 void GLCanvas3D::_render_sequential_clearance()
 {
     if (m_layers_editing.is_enabled() || m_gizmos.is_dragging())
@@ -5177,7 +5160,6 @@ void GLCanvas3D::_render_sequential_clearance()
  
     m_sequential_print_clearance.render();
 }
-#endif // ENABLE_SEQUENTIAL_LIMITS
 
 #if ENABLE_RENDER_SELECTION_CENTER
 void GLCanvas3D::_render_selection_center() const
@@ -5288,27 +5270,49 @@ void GLCanvas3D::_render_volumes_for_picking() const
 {
     static const GLfloat INV_255 = 1.0f / 255.0f;
 
+#if ENABLE_ALLOW_NEGATIVE_Z
+    auto* shader = wxGetApp().get_shader("picking");
+    if (!shader)
+        return;
+#endif // ENABLE_ALLOW_NEGATIVE_Z
+
     // do not cull backfaces to show broken geometry, if any
     glsafe(::glDisable(GL_CULL_FACE));
 
     glsafe(::glEnableClientState(GL_VERTEX_ARRAY));
     glsafe(::glEnableClientState(GL_NORMAL_ARRAY));
 
+#if ENABLE_ALLOW_NEGATIVE_Z
+    shader->start_using();
+    shader->set_uniform("viewed_from_top", wxGetApp().plater()->get_camera().is_looking_downward());
+#endif // ENABLE_ALLOW_NEGATIVE_Z
+
     const Transform3d& view_matrix = wxGetApp().plater()->get_camera().get_view_matrix();
     for (size_t type = 0; type < 2; ++ type) {
         GLVolumeWithIdAndZList to_render = volumes_to_render(m_volumes.volumes, (type == 0) ? GLVolumeCollection::ERenderType::Opaque : GLVolumeCollection::ERenderType::Transparent, view_matrix);
         for (const GLVolumeWithIdAndZ& volume : to_render)
-	        if (!volume.first->disabled && ((volume.first->composite_id.volume_id >= 0) || m_render_sla_auxiliaries)) {
+	        if (!volume.first->disabled && (volume.first->composite_id.volume_id >= 0 || m_render_sla_auxiliaries)) {
 		        // Object picking mode. Render the object with a color encoding the object index.
 		        unsigned int id = volume.second.first;
 		        unsigned int r = (id & (0x000000FF << 0)) << 0;
 		        unsigned int g = (id & (0x000000FF << 8)) >> 8;
 		        unsigned int b = (id & (0x000000FF << 16)) >> 16;
 		        unsigned int a = picking_checksum_alpha_channel(r, g, b);
-		        glsafe(::glColor4f((GLfloat)r * INV_255, (GLfloat)g * INV_255, (GLfloat)b * INV_255, (GLfloat)a * INV_255));
+#if ENABLE_ALLOW_NEGATIVE_Z
+                std::array<float, 4> color = { (float)r * INV_255, (float)g * INV_255, (float)b * INV_255, (float)a * INV_255 };
+                shader->set_uniform("uniform_color", color);
+                shader->set_uniform("world_matrix", volume.first->world_matrix());
+#else
+                glsafe(::glColor4f((GLfloat)r * INV_255, (GLfloat)g * INV_255, (GLfloat)b * INV_255, (GLfloat)a * INV_255));
+#endif // ENABLE_ALLOW_NEGATIVE_Z
+
 	            volume.first->render();
 	        }
 	}
+
+#if ENABLE_ALLOW_NEGATIVE_Z
+    shader->stop_using();
+#endif // ENABLE_ALLOW_NEGATIVE_Z
 
     glsafe(::glDisableClientState(GL_NORMAL_ARRAY));
     glsafe(::glDisableClientState(GL_VERTEX_ARRAY));
@@ -5710,7 +5714,7 @@ void GLCanvas3D::_load_print_toolpaths()
     if (!print->has_skirt() && !print->has_brim())
         return;
 
-    const float color[] = { 0.5f, 1.0f, 0.5f, 1.0f }; // greenish
+    const std::array<float, 4> color = { 0.5f, 1.0f, 0.5f, 1.0f }; // greenish
 
     // number of skirt layers
     size_t total_layer_count = 0;
@@ -5756,7 +5760,7 @@ void GLCanvas3D::_load_print_toolpaths()
 
 void GLCanvas3D::_load_print_object_toolpaths(const PrintObject& print_object, const std::vector<std::string>& str_tool_colors, const std::vector<CustomGCode::Item>& color_print_values)
 {
-    std::vector<float> tool_colors = _parse_colors(str_tool_colors);
+    std::vector<std::array<float, 4>> tool_colors = _parse_colors(str_tool_colors);
 
     struct Ctxt
     {
@@ -5765,20 +5769,20 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject& print_object, c
         bool                         has_perimeters;
         bool                         has_infill;
         bool                         has_support;
-        const std::vector<float>*    tool_colors;
+        const std::vector<std::array<float, 4>>* tool_colors;
         bool                         is_single_material_print;
         int                          extruders_cnt;
         const std::vector<CustomGCode::Item>*   color_print_values;
 
-        static const float*          color_perimeters() { static float color[4] = { 1.0f, 1.0f, 0.0f, 1.f }; return color; } // yellow
-        static const float*          color_infill() { static float color[4] = { 1.0f, 0.5f, 0.5f, 1.f }; return color; } // redish
-        static const float*          color_support() { static float color[4] = { 0.5f, 1.0f, 0.5f, 1.f }; return color; } // greenish
-        static const float*          color_pause_or_custom_code() { static float color[4] = { 0.5f, 0.5f, 0.5f, 1.f }; return color; } // gray
+        static const std::array<float, 4>& color_perimeters() { static std::array<float, 4> color = { 1.0f, 1.0f, 0.0f, 1.f }; return color; } // yellow
+        static const std::array<float, 4>& color_infill() { static std::array<float, 4> color = { 1.0f, 0.5f, 0.5f, 1.f }; return color; } // redish
+        static const std::array<float, 4>& color_support() { static std::array<float, 4> color = { 0.5f, 1.0f, 0.5f, 1.f }; return color; } // greenish
+        static const std::array<float, 4>& color_pause_or_custom_code() { static std::array<float, 4> color = { 0.5f, 0.5f, 0.5f, 1.f }; return color; } // gray
 
         // For cloring by a tool, return a parsed color.
         bool                         color_by_tool() const { return tool_colors != nullptr; }
-        size_t                       number_tools()  const { return this->color_by_tool() ? tool_colors->size() / 4 : 0; }
-        const float*                 color_tool(size_t tool) const { return tool_colors->data() + tool * 4; }
+        size_t                       number_tools() const { return color_by_tool() ? tool_colors->size() : 0; }
+        const std::array<float, 4>&  color_tool(size_t tool) const { return (*tool_colors)[tool]; }
 
         // For coloring by a color_print(M600), return a parsed color.
         bool                         color_by_color_print() const { return color_print_values!=nullptr; }
@@ -5918,8 +5922,8 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject& print_object, c
     //FIXME Improve the heuristics for a grain size.
     size_t          grain_size = std::max(ctxt.layers.size() / 16, size_t(1));
     tbb::spin_mutex new_volume_mutex;
-    auto            new_volume = [this, &new_volume_mutex](const float *color) -> GLVolume* {
-    	// Allocate the volume before locking.
+    auto            new_volume = [this, &new_volume_mutex](const std::array<float, 4>& color) {
+        // Allocate the volume before locking.
 		GLVolume *volume = new GLVolume(color);
 		volume->is_extrusion_path = true;
     	tbb::spin_mutex::scoped_lock lock;
@@ -6056,23 +6060,22 @@ void GLCanvas3D::_load_wipe_tower_toolpaths(const std::vector<std::string>& str_
     if (!print->is_step_done(psWipeTower))
         return;
 
-    std::vector<float> tool_colors = _parse_colors(str_tool_colors);
+    std::vector<std::array<float, 4>> tool_colors = _parse_colors(str_tool_colors);
 
     struct Ctxt
     {
         const Print                 *print;
-        const std::vector<float>    *tool_colors;
+        const std::vector<std::array<float, 4>>* tool_colors;
         Vec2f                        wipe_tower_pos;
         float                        wipe_tower_angle;
 
-        static const float*          color_support() { static float color[4] = { 0.5f, 1.0f, 0.5f, 1.f }; return color; } // greenish
+        static const std::array<float, 4>& color_support() { static std::array<float, 4> color = { 0.5f, 1.0f, 0.5f, 1.f }; return color; } // greenish
 
         // For cloring by a tool, return a parsed color.
         bool                         color_by_tool() const { return tool_colors != nullptr; }
-        size_t                       number_tools()  const { return this->color_by_tool() ? tool_colors->size() / 4 : 0; }
-        const float*                 color_tool(size_t tool) const { return tool_colors->data() + tool * 4; }
-        int                          volume_idx(int tool, int feature) const
-        {
+        size_t                       number_tools() const { return this->color_by_tool() ? tool_colors->size() : 0; }
+        const std::array<float, 4>&  color_tool(size_t tool) const { return (*tool_colors)[tool]; }
+        int                          volume_idx(int tool, int feature) const {
             return this->color_by_tool() ? std::min<int>(this->number_tools() - 1, std::max<int>(tool, 0)) : feature;
         }
 
@@ -6103,7 +6106,7 @@ void GLCanvas3D::_load_wipe_tower_toolpaths(const std::vector<std::string>& str_
     size_t          n_items = print->wipe_tower_data().tool_changes.size() + (ctxt.priming.empty() ? 0 : 1);
     size_t          grain_size = std::max(n_items / 128, size_t(1));
     tbb::spin_mutex new_volume_mutex;
-    auto            new_volume = [this, &new_volume_mutex](const float *color) -> GLVolume* {
+    auto            new_volume = [this, &new_volume_mutex](const std::array<float, 4>& color) {
         auto *volume = new GLVolume(color);
 		volume->is_extrusion_path = true;
         tbb::spin_mutex::scoped_lock lock;
@@ -6219,7 +6222,7 @@ void GLCanvas3D::_load_sla_shells()
         return;
 
     auto add_volume = [this](const SLAPrintObject &object, int volume_id, const SLAPrintObject::Instance& instance,
-        const TriangleMesh &mesh, const float color[4], bool outside_printer_detection_enabled) {
+        const TriangleMesh& mesh, const std::array<float, 4>& color, bool outside_printer_detection_enabled) {
         m_volumes.volumes.emplace_back(new GLVolume(color));
         GLVolume& v = *m_volumes.volumes.back();
 #if ENABLE_SMOOTH_NORMALS
@@ -6230,8 +6233,8 @@ void GLCanvas3D::_load_sla_shells()
         v.indexed_vertex_array.finalize_geometry(m_initialized);
         v.shader_outside_printer_detection_enabled = outside_printer_detection_enabled;
         v.composite_id.volume_id = volume_id;
-        v.set_instance_offset(unscale(instance.shift.x(), instance.shift.y(), 0));
-        v.set_instance_rotation(Vec3d(0.0, 0.0, (double)instance.rotation));
+        v.set_instance_offset(unscale(instance.shift.x(), instance.shift.y(), 0.0));
+        v.set_instance_rotation({ 0.0, 0.0, (double)instance.rotation });
         v.set_instance_mirror(X, object.is_left_handed() ? -1. : 1.);
         v.set_convex_hull(mesh.convex_hull_3d());
     };
@@ -6252,9 +6255,8 @@ void GLCanvas3D::_load_sla_shells()
             }
             double shift_z = obj->get_current_elevation();
             for (unsigned int i = initial_volumes_count; i < m_volumes.volumes.size(); ++ i) {
-                GLVolume& v = *m_volumes.volumes[i];
                 // apply shift z
-                v.set_sla_shift_z(shift_z);
+                m_volumes.volumes[i]->set_sla_shift_z(shift_z);
             }
         }
 
@@ -6265,7 +6267,7 @@ void GLCanvas3D::_update_toolpath_volumes_outside_state()
 {
     BoundingBoxf3 test_volume = (m_config != nullptr) ? print_volume(*m_config) : BoundingBoxf3();
     for (GLVolume* volume : m_volumes.volumes) {
-        volume->is_outside = ((test_volume.radius() > 0.0) && volume->is_extrusion_path) ? !test_volume.contains(volume->bounding_box()) : false;
+        volume->is_outside = (test_volume.radius() > 0.0 && volume->is_extrusion_path) ? !test_volume.contains(volume->bounding_box()) : false;
     }
 }
 
@@ -6273,7 +6275,7 @@ void GLCanvas3D::_update_sla_shells_outside_state()
 {
     BoundingBoxf3 test_volume = (m_config != nullptr) ? print_volume(*m_config) : BoundingBoxf3();
     for (GLVolume* volume : m_volumes.volumes) {
-        volume->is_outside = ((test_volume.radius() > 0.0) && volume->shader_outside_printer_detection_enabled) ? !test_volume.contains(volume->transformed_convex_hull_bounding_box()) : false;
+        volume->is_outside = (test_volume.radius() > 0.0 && volume->shader_outside_printer_detection_enabled) ? !test_volume.contains(volume->transformed_convex_hull_bounding_box()) : false;
     }
 }
 
@@ -6294,11 +6296,11 @@ void GLCanvas3D::_set_warning_notification_if_needed(EWarning warning)
     _set_warning_notification(warning, show);
 }
 
-std::vector<float> GLCanvas3D::_parse_colors(const std::vector<std::string>& colors)
+std::vector<std::array<float, 4>> GLCanvas3D::_parse_colors(const std::vector<std::string>& colors)
 {
     static const float INV_255 = 1.0f / 255.0f;
 
-    std::vector<float> output(colors.size() * 4, 1.0f);
+    std::vector<std::array<float, 4>> output(colors.size(), { 1.0f, 1.0f, 1.0f, 1.0f });
     for (size_t i = 0; i < colors.size(); ++i) {
         const std::string& color = colors[i];
         const char* c = color.data() + 1;
@@ -6309,7 +6311,7 @@ std::vector<float> GLCanvas3D::_parse_colors(const std::vector<std::string>& col
                 if (digit1 == -1 || digit2 == -1)
                     break;
 
-                output[i * 4 + j] = float(digit1 * 16 + digit2) * INV_255;
+                output[i][j] = float(digit1 * 16 + digit2) * INV_255;
             }
         }
     }
